@@ -50,7 +50,7 @@ void test_d_bsdf() {
            d_material, d_p, d_wi, d_wo);
 
     // Check diffuse derivatives
-    auto finite_delta = Real(1e-6);
+    auto finite_delta = Real(1e-5);
     for (int i = 0; i < 3; i++) {
         auto delta_m = m;
         delta_m.diffuse_reflectance.texels[0][i] += float(finite_delta);

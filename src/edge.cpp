@@ -3,7 +3,7 @@
 #include "scene.h"
 #include "parallel.h"
 #include "thrust_utils.h"
-#include "ltc.inc"
+#include "ltc.h"
 #include <memory>
 
 #include <thrust/iterator/constant_iterator.h>
@@ -18,27 +18,27 @@ constexpr bool c_use_edge_tree = true;
 constexpr bool c_uniform_sampling = false;
 constexpr bool c_use_nee_ray = true;
 
-namespace ltc {
+// namespace ltc {
 
-const float *tabMcpu = &tabM_[0];
-const float *tabMgpu = nullptr;
-const float *tabM = nullptr;
+// const float *tabMcpu = &tabM_[0];
+// const float *tabMgpu = nullptr;
+// const float *tabM = nullptr;
 
-}
+// }
 
-void initialize_ltc_table(bool use_gpu) {
-    ltc::tabM = use_gpu ? ltc::tabMgpu : ltc::tabMcpu;
-    if (use_gpu && ltc::tabM == nullptr) {
-#ifdef __CUDACC__
-        checkCuda(cudaMallocManaged(&ltc::tabMgpu, sizeof(ltc::tabM_)));
-        checkCuda(cudaMemcpy((void*)ltc::tabMgpu,
-                             (void*)ltc::tabM_, sizeof(ltc::tabM_), cudaMemcpyHostToDevice));
-        ltc::tabM = ltc::tabMgpu;
-#else
-        assert(false);
-#endif 
-    }
-}
+// void initialize_ltc_table(bool use_gpu) {
+//     ltc::tabM = use_gpu ? ltc::tabMgpu : ltc::tabMcpu;
+//     if (use_gpu && ltc::tabM == nullptr) {
+// #ifdef __CUDACC__
+//         checkCuda(cudaMallocManaged(&ltc::tabMgpu, sizeof(ltc::tabM_)));
+//         checkCuda(cudaMemcpy((void*)ltc::tabMgpu,
+//                              (void*)ltc::tabM_, sizeof(ltc::tabM_), cudaMemcpyHostToDevice));
+//         ltc::tabM = ltc::tabMgpu;
+// #else
+//         assert(false);
+// #endif
+//     }
+// }
 
 struct edge_collector {
     DEVICE inline void operator()(int idx) {
@@ -944,19 +944,19 @@ void compute_primary_edge_derivatives(const Scene &scene,
     }, edge_records.size(), scene.use_gpu);
 }
 
-DEVICE
-inline Matrix3x3 get_ltc_matrix(const SurfacePoint &surface_point,
-                                const Vector3 &wi,
-                                Real roughness,
-                                const float *tabM) {
-    auto cos_theta = dot(wi, surface_point.shading_frame.n);
-    auto theta = acos(cos_theta);
-    // search lookup table
-    auto rid = clamp(int(roughness * (ltc::size - 1)), 0, ltc::size - 1);
-    auto tid = clamp(int((theta / (M_PI / 2.f)) * (ltc::size - 1)), 0, ltc::size - 1);
-    // TODO: linear interpolation?
-    return Matrix3x3(&tabM[9 * (rid + tid * ltc::size)]);
-}
+// DEVICE
+// inline Matrix3x3 get_ltc_matrix(const SurfacePoint &surface_point,
+//                                 const Vector3 &wi,
+//                                 Real roughness,
+//                                 const float *tabM) {
+//     auto cos_theta = dot(wi, surface_point.shading_frame.n);
+//     auto theta = acos(cos_theta);
+//     // search lookup table
+//     auto rid = clamp(int(roughness * (ltc::size - 1)), 0, ltc::size - 1);
+//     auto tid = clamp(int((theta / (M_PI / 2.f)) * (ltc::size - 1)), 0, ltc::size - 1);
+//     // TODO: linear interpolation?
+//     return Matrix3x3(&tabM[9 * (rid + tid * ltc::size)]);
+// }
 
 struct BVHStackItemH {
     BVHNodePtr node_ptr;
@@ -967,6 +967,7 @@ struct BVHStackItemH {
 struct BVHStackItemL {
     BVHNodePtr node_ptr;
 };
+
 
 struct secondary_edge_sampler {
     DEVICE inline Real min_abs_bound(Real min, Real max) {

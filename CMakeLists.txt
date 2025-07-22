@@ -93,6 +93,7 @@ set(SRCS src/aabb.h
          src/warp_cv.h
          src/warp_field.h
          src/warp_rr.h
+         src/ltc.h
          xatlas/xatlas.h
          
 
@@ -127,6 +128,7 @@ set(SRCS src/aabb.h
          src/warp_cv.cpp
          src/warp_field.cpp
          src/warp_rr.cpp
+         src/ltc.cpp
          xatlas/xatlas.cpp)
 
 if(REDNER_CUDA)
