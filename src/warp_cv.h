@@ -27,7 +27,8 @@ void accumulate_primary_control_variates(const Scene& scene,
                                  const BufferView<Matrix3x3>& control_sample_covariance,
                                  const BufferView<DShape>& d_shapes,
                                  const Real weight,
-                                 float* debug_image);
+                                 float* debug_image,
+                                 float* screen_gradient_image);
 
 
 DEVICE
@@ -50,7 +51,8 @@ void accumulate_aux_control_variate(
         const Real inv_normalization,
 
         DShape* d_shapes,
-        float* debug_image
+        float* debug_image,
+        float* screen_gradient_image
 ) {
     // Compute the A matrix such that w_i^T A w_i is the control variate.
 
@@ -246,4 +248,25 @@ void accumulate_aux_control_variate(
         debug_image[pixel_id] += -(d_primary_v_p[0][DIM_SELECT] +
                                     d_primary_v_p[1][DIM_SELECT] +
                                     d_primary_v_p[2][DIM_SELECT]);
+
+    if (! TEASER) {
+        if (primary_isect.shape_id == SHAPE_SELECT && screen_gradient_image != nullptr) {
+                screen_gradient_image[2 * pixel_id + 0] += -(d_primary_v_p[0][DIM_SELECT] +
+                                                        d_primary_v_p[1][DIM_SELECT] +
+                                                        d_primary_v_p[2][DIM_SELECT]);
+                screen_gradient_image[2 * pixel_id + 1] += -(d_primary_v_p[0][DIM_SELECT] +
+                                                        d_primary_v_p[1][DIM_SELECT] +
+                                                        d_primary_v_p[2][DIM_SELECT]);
+        }
+    }
+    else {
+        if (primary_isect.shape_id >= 1 && primary_isect.shape_id <= 4 && screen_gradient_image != nullptr) {
+            screen_gradient_image[2 * pixel_id + 0] += -(d_primary_v_p[0][DIM_SELECT_TEASER] +
+                                                        d_primary_v_p[1][DIM_SELECT_TEASER] +
+                                                        d_primary_v_p[2][DIM_SELECT_TEASER]);
+            screen_gradient_image[2 * pixel_id + 1] += -(d_primary_v_p[0][DIM_SELECT_TEASER] +
+                                                        d_primary_v_p[1][DIM_SELECT_TEASER] +
+                                                        d_primary_v_p[2][DIM_SELECT_TEASER]);
+        }
+    }
 }

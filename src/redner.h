@@ -175,5 +175,7 @@ inline int popc(uint8_t x) {
 // TODO: Global debugging flags.
 // Use to select the shape_id and a
 // translation direction to output derivative images.
-#define SHAPE_SELECT 0
-#define DIM_SELECT 0
+#define SHAPE_SELECT 1
+#define DIM_SELECT 1
+#define DIM_SELECT_TEASER 2
+#define TEASER false

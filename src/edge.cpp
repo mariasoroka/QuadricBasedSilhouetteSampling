@@ -830,9 +830,88 @@ struct primary_edge_derivatives_computer {
                             0, camera.viewport_end.x - camera.viewport_beg.x);
             auto yi = clamp(int(edge_pt[1] * camera.height - camera.viewport_beg.y),
                             0, camera.viewport_end.y - camera.viewport_beg.y);
-            auto pixel_idx = yi * (camera.viewport_end.x - camera.viewport_beg.x) + xi;
-            atomic_add(&screen_gradient_image[2 * pixel_idx + 0], d_edge_pt[0]);
-            atomic_add(&screen_gradient_image[2 * pixel_idx + 1], d_edge_pt[1]);
+            auto pixel_idx = yi * camera.width + xi;
+            auto normalization = Real(0);
+            for(int _kx = -3; _kx <= 3; _kx++){
+                for(int _ky = -3; _ky <= 3; _ky++) {
+                    auto kx = xi + _kx;
+                    auto ky = yi + _ky;
+
+                    if (kx < 0 || kx >= camera.width)
+                        continue;
+
+                    if (ky < 0 || ky >= camera.height)
+                        continue;
+
+                    // Get pixel center.
+                    Vector2 pixel_center;
+                    local_to_screen_pos(camera,
+                                (ky * camera.width + kx),
+                                Vector2{0, 0},
+                                pixel_center);
+
+                    auto local_pos = Vector2{
+                        (edge_pt[0] - pixel_center[0]) * camera.width,
+                        (edge_pt[1] - pixel_center[1]) * camera.height
+                    };
+
+                    Vector2 jacobian;
+                    Real value;
+                    screen_filter_grad(camera,
+                                        idx,
+                                        local_pos,
+                                        jacobian,
+                                        value);
+
+                    normalization += value;
+                }
+            }
+
+            for(int _kx = -3; _kx <= 3; _kx++) {
+                for(int _ky = -3; _ky <= 3; _ky++) {
+                    auto kx = xi + _kx;
+                    auto ky = yi + _ky;
+
+                    if (kx < 0 || kx >= camera.width)
+                        continue;
+
+                    if (ky < 0 || ky >= camera.height)
+                        continue;
+
+                    // Get pixel center.
+                    Vector2 pixel_center;
+                    local_to_screen_pos(camera,
+                                (ky * camera.width + kx),
+                                Vector2{0, 0},
+                                pixel_center);
+
+                    auto local_pos = Vector2{
+                        (edge_pt[0] - pixel_center[0]) * camera.width,
+                        (edge_pt[1] - pixel_center[1]) * camera.height
+                    };
+
+                    Vector2 jacobian;
+                    Real value;
+                    screen_filter_grad(camera,
+                                        idx,
+                                        local_pos,
+                                        jacobian,
+                                        value);
+                    if (! TEASER) {
+                        //atomic add?
+                        if (edge_record.edge.shape_id == SHAPE_SELECT) {
+                            screen_gradient_image[2 * (ky * camera.width + kx) + 0] += (d_v0[DIM_SELECT] + d_v1[DIM_SELECT]) * value / normalization;
+                            screen_gradient_image[2 * (ky * camera.width + kx) + 1] += (d_v0[DIM_SELECT] + d_v1[DIM_SELECT]) * value / normalization;
+                        }
+                    }
+                    else {
+                        if (edge_record.edge.shape_id >= 1 && edge_record.edge.shape_id <= 4) {
+                            screen_gradient_image[2 * (ky * camera.width + kx) + 0] += (d_v0[DIM_SELECT_TEASER] + d_v1[DIM_SELECT_TEASER]) * value / normalization;
+                            screen_gradient_image[2 * (ky * camera.width + kx) + 1] += (d_v0[DIM_SELECT_TEASER] + d_v1[DIM_SELECT_TEASER]) * value / normalization;
+                        }
+                    }
+                }
+            }
         }
 
         /* TODO: Debug code. */
@@ -923,6 +1002,7 @@ struct primary_edge_derivatives_computer {
     DCamera d_camera;
     float *debug_image;
     float *screen_gradient_image;
+    const Matrix4x4 &m_transf;
 };
 
 void compute_primary_edge_derivatives(const Scene &scene,
@@ -931,7 +1011,8 @@ void compute_primary_edge_derivatives(const Scene &scene,
                                       BufferView<DShape> d_shapes,
                                       DCamera d_camera,
                                       float *debug_image,
-                                      float *screen_gradient_image) {
+                                      float *screen_gradient_image,
+                                      const Matrix4x4 &m_transf) {
     parallel_for(primary_edge_derivatives_computer{
         scene.camera,
         scene.shapes.data,
@@ -940,7 +1021,8 @@ void compute_primary_edge_derivatives(const Scene &scene,
         d_shapes.begin(),
         d_camera,
         debug_image,
-        screen_gradient_image
+        screen_gradient_image,
+        m_transf
     }, edge_records.size(), scene.use_gpu);
 }
 
@@ -2205,8 +2287,19 @@ struct secondary_edge_derivatives_accumulator {
         }
         atomic_add(&(d_shapes[edge_record.edge.shape_id].vertices[3 * edge_record.edge.v0]), dcolor_dv0);
         atomic_add(&(d_shapes[edge_record.edge.shape_id].vertices[3 * edge_record.edge.v1]), dcolor_dv1);
+        if (! TEASER) {
+            if(edge_record.edge.shape_id == SHAPE_SELECT && screen_gradient_image != nullptr) {
+                screen_gradient_image[pixel_id * 2 + 0] += (dcolor_dv0[DIM_SELECT] + dcolor_dv1[DIM_SELECT]);
+                screen_gradient_image[pixel_id * 2 + 1] += (dcolor_dv0[DIM_SELECT] + dcolor_dv1[DIM_SELECT]);
+            }
+        }
+        else {
+            if(edge_record.edge.shape_id >= 1 && edge_record.edge.shape_id <= 4 && screen_gradient_image != nullptr) {
+                screen_gradient_image[pixel_id * 2 + 0] += (dcolor_dv0[DIM_SELECT_TEASER] + dcolor_dv1[DIM_SELECT_TEASER]);
+                screen_gradient_image[pixel_id * 2 + 1] += (dcolor_dv0[DIM_SELECT_TEASER] + dcolor_dv1[DIM_SELECT_TEASER]);
+            }
+        }
     }
-
     const Shape *shapes;
     const int *active_pixels;
     const SurfacePoint *shading_points;
@@ -2216,6 +2309,8 @@ struct secondary_edge_derivatives_accumulator {
     SurfacePoint *d_points;
     DShape *d_shapes;
     float* debug_image;
+    float* screen_gradient_image;
+    const Matrix4x4 &m_transf;
 };
 
 void accumulate_secondary_edge_derivatives(const Scene &scene,
@@ -2226,7 +2321,9 @@ void accumulate_secondary_edge_derivatives(const Scene &scene,
                                            const BufferView<Real> &edge_contribs,
                                            BufferView<SurfacePoint> d_points,
                                            BufferView<DShape> d_shapes,
-                                           float* debug_image) {
+                                           float* debug_image,
+                                           float* screen_gradient_image,
+                                           const Matrix4x4 &m_transf) {
     parallel_for(secondary_edge_derivatives_accumulator{
         scene.shapes.data,
         active_pixels.begin(),
@@ -2236,6 +2333,8 @@ void accumulate_secondary_edge_derivatives(const Scene &scene,
         edge_contribs.begin(),
         d_points.begin(),
         d_shapes.begin(),
-        debug_image
+        debug_image,
+        screen_gradient_image,
+        m_transf
     }, active_pixels.size(), scene.use_gpu);
 }

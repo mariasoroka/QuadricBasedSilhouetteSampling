@@ -296,6 +296,29 @@ PYBIND11_MODULE(redner, m) {
         .def_readwrite("y", &Vector3f::y)
         .def_readwrite("z", &Vector3f::z);
 
+    py::class_<Matrix4x4f>(m, "Matrix4x4f", py::module_local())
+        .def(py::init<float, float, float, float,
+                      float, float, float, float,
+                      float, float, float, float,
+                      float, float, float, float>())
+        
+        .def("__call__", [](const Matrix4x4f &m, int i, int j){
+                   return m(i, j);
+                 }
+            );
+        
+
+    py::class_<Matrix4x4>(m, "Matrix4x4", py::module_local())
+        .def(py::init<double, double, double, double,
+                      double, double, double, double,
+                      double, double, double, double,
+                      double, double, double, double>())
+        
+        .def("__call__", [](const Matrix4x4 &m, int i, int j){
+                   return m(i, j);
+                 }
+            )
+        .def("identity", &Matrix4x4::identity);
     py::class_<MitsubaTriMesh>(m, "MitsubaTriMesh")
         .def_readwrite("vertices", &MitsubaTriMesh::vertices)
         .def_readwrite("indices", &MitsubaTriMesh::indices)

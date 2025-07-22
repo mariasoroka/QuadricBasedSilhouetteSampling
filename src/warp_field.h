@@ -144,4 +144,5 @@ void accumulate_primary_control_variates(const Scene& scene,
                     const BufferView<Matrix3x3>& control_sample_covariance,
                     const BufferView<DShape>& d_shapes,
                     const Real weight,
-                    float* debug_image);
+                    float* debug_image,
+                    float* screen_gradient_image);

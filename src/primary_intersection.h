@@ -23,4 +23,5 @@ void d_primary_intersection(const Scene &scene,
                             DScene *d_scene,
                             BufferView<Vector2> &d_camera_samples,
                             float *debug_image,
-                            float *screen_gradient_image);
+                            float *screen_gradient_image,
+                            const Matrix4x4 &m_transf);

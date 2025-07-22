@@ -65,14 +65,15 @@ class EdgeSamplingIntegrator(Integrator):
                            num_samples=num_samples
                            )
 
-    def render_screen_gradient(self, seed, scene, d_img, d_scene, screen_grad):
+    def render_screen_gradient(self, seed, scene, d_img, d_scene, screen_grad, matrix):
         num_samples = self.num_samples[1]
         return self.render(seed=seed[1] if hasattr(seed, '__iter__') else seed,
                            scene=scene,
                            d_img=d_img,
                            d_scene=d_scene,
                            screen_gradient_img=screen_grad,
-                           num_samples=num_samples)
+                           num_samples=num_samples,
+                           matrix=matrix)
 
     def render_debug_image(self, seed, scene, d_img, d_scene, debug_img):
         num_samples = self.num_samples[1]
@@ -90,7 +91,8 @@ class EdgeSamplingIntegrator(Integrator):
                d_scene=None,
                screen_gradient_img=redner.float_ptr(0),
                debug_img=redner.float_ptr(0),
-               num_samples=None):
+               num_samples=None,
+               matrix=redner.Matrix4x4.identity()):
 
         use_secondary_edge_sampling = self.use_secondary_edge_sampling
         if self.max_bounces == 0:
@@ -114,7 +116,8 @@ class EdgeSamplingIntegrator(Integrator):
                       d_img,
                       d_scene,
                       screen_gradient_img,
-                      debug_img)
+                      debug_img,
+                      matrix)
 
         if self.timing:
             print("Time elapsed: ", time.perf_counter() - start, "s")

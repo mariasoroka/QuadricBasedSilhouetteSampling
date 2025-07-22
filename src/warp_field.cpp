@@ -274,7 +274,8 @@ struct warp_derivatives_accumulator {
                 f,
                 inv_normalization.at(num_aux_rays - 1),
                 d_shapes,
-                debug_image
+                debug_image,
+                screen_gradient_image
             );
         }
 
@@ -445,10 +446,6 @@ struct warp_derivatives_accumulator {
                                     *d_camera,
                                     &d_screen_pos);
 
-                if (screen_gradient_image != nullptr) {
-                    screen_gradient_image[2 * pixel_id + 0] += d_screen_pos.x;
-                    screen_gradient_image[2 * pixel_id + 1] += d_screen_pos.y;
-                }
             }
 
             if(!is_first_bounce && d_shading_points != nullptr) {
@@ -499,6 +496,19 @@ struct warp_derivatives_accumulator {
                     d_aux_v_p[1]);
                 atomic_add(&d_shapes[t_aux_isect.shape_id].vertices[3 * aux_tri_index[2]],
                     d_aux_v_p[2]);
+
+                if (! TEASER){
+                    if (screen_gradient_image != nullptr && t_aux_isect.shape_id == SHAPE_SELECT) {
+                        screen_gradient_image[2 * pixel_id + 0] += d_aux_v_p[0][DIM_SELECT] + d_aux_v_p[1][DIM_SELECT] + d_aux_v_p[2][DIM_SELECT];
+                        screen_gradient_image[2 * pixel_id + 1] += d_aux_v_p[0][DIM_SELECT] + d_aux_v_p[1][DIM_SELECT] + d_aux_v_p[2][DIM_SELECT];
+                    }
+                }
+                else {
+                    if (t_aux_isect.shape_id >= 1 && t_aux_isect.shape_id <= 4 && screen_gradient_image != nullptr) {
+                        screen_gradient_image[2 * pixel_id + 0] += d_aux_v_p[0][DIM_SELECT_TEASER] + d_aux_v_p[1][DIM_SELECT_TEASER] + d_aux_v_p[2][DIM_SELECT_TEASER];
+                        screen_gradient_image[2 * pixel_id + 1] += d_aux_v_p[0][DIM_SELECT_TEASER] + d_aux_v_p[1][DIM_SELECT_TEASER] + d_aux_v_p[2][DIM_SELECT_TEASER];
+                    }
+                }
             }
         }
 

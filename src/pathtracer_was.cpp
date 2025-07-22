@@ -387,7 +387,8 @@ namespace vfield {
                 ptr<float> d_rendered_image,
                 std::shared_ptr<DScene> d_scene,
                 ptr<float> screen_gradient_image,
-                ptr<float> debug_image) {
+                ptr<float> debug_image,
+                const Matrix4x4 &m_transf) {
     #ifdef __NVCC__
         int old_device_id = -1;
         if (scene.use_gpu) {
@@ -845,7 +846,9 @@ namespace vfield {
                         d_ray_differentials,
                         d_points,
                         d_bsdf_wos,
-                        d_light_wos);
+                        d_light_wos,
+                        screen_gradient_image.get(),
+                        m_transf);
 
                     if (options.enable_secondary_warp_field) {
                         ////////////////////////////////////////////////////////////////////////////////
@@ -1010,7 +1013,7 @@ namespace vfield {
                             &adjacencies.at(0),
                             d_scene.get(),
                             debug_image.get(),
-                            nullptr,
+                            screen_gradient_image.get(),
 
                             BufferView<Vector3>(),
                             BufferView<Real>(),
@@ -1048,7 +1051,7 @@ namespace vfield {
                             &adjacencies.at(0),
                             d_scene.get(),
                             debug_image.get(),
-                            nullptr,
+                            screen_gradient_image.get(),
 
                             BufferView<Vector3>(),
                             BufferView<Real>(),
@@ -1146,7 +1149,8 @@ namespace vfield {
                                         d_scene.get(),
                                         d_camera_samples,
                                         debug_image.get(),
-                                        screen_gradient_image.get());
+                                        screen_gradient_image.get(),
+                                        m_transf);
 
                     // Compute primary edge contribution using warp fields.
                     if( options.enable_primary_warp_field ) {
@@ -1310,7 +1314,8 @@ namespace vfield {
                     d_scene->shapes.view(0, d_scene->shapes.size()),
 
                     Real(1) / options.num_samples,
-                    debug_image.get()
+                    debug_image.get(),
+                    screen_gradient_image.get()
                 );
             }
         }

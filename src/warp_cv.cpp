@@ -228,6 +228,27 @@ struct control_variates_accumulator{
                                        d_control_v_p[1][DIM_SELECT] + 
                                        d_control_v_p[2][DIM_SELECT]);
         }
+
+        if (! TEASER) {
+            if (control_isect.shape_id == SHAPE_SELECT && screen_gradient_image != nullptr) {
+                screen_gradient_image[2 * pixel_id + 0] += -(d_control_v_p[0][DIM_SELECT] + 
+                                                            d_control_v_p[1][DIM_SELECT] + 
+                                                            d_control_v_p[2][DIM_SELECT]);
+                screen_gradient_image[2 * pixel_id + 1] += -(d_control_v_p[0][DIM_SELECT] +
+                                                            d_control_v_p[1][DIM_SELECT] +
+                                                            d_control_v_p[2][DIM_SELECT]);
+            }
+        }
+        else {
+            if (control_isect.shape_id >= 1 && control_isect.shape_id <= 4 && screen_gradient_image != nullptr) {
+                screen_gradient_image[2 * pixel_id + 0] += -(d_control_v_p[0][DIM_SELECT_TEASER] + 
+                                                            d_control_v_p[1][DIM_SELECT_TEASER] + 
+                                                            d_control_v_p[2][DIM_SELECT_TEASER]);
+                screen_gradient_image[2 * pixel_id + 1] += -(d_control_v_p[0][DIM_SELECT_TEASER] +
+                                                            d_control_v_p[1][DIM_SELECT_TEASER] +
+                                                            d_control_v_p[2][DIM_SELECT_TEASER]);
+            }
+        }
     }
 
     const Scene& scene;
@@ -250,6 +271,7 @@ struct control_variates_accumulator{
     const Real weight;
 
     float* debug_image;
+    float* screen_gradient_image;
 };
 
 
@@ -270,7 +292,8 @@ void accumulate_primary_control_variates(const Scene& scene,
                     const BufferView<DShape>& d_shapes,
                     const Real weight,
                     
-                    float* debug_image) {
+                    float* debug_image,
+                    float* screen_gradient_image) {
     parallel_for(control_variates_accumulator{
         scene,
         kernel_parameters,
@@ -289,6 +312,7 @@ void accumulate_primary_control_variates(const Scene& scene,
         d_shapes.begin(),
         weight,
 
-        debug_image
+        debug_image,
+        screen_gradient_image
     }, active_pixels.size(), scene.use_gpu);
 }

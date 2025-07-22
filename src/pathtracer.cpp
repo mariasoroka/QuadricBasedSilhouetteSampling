@@ -185,7 +185,8 @@ namespace edge_sampling {
                 ptr<float> d_rendered_image,
                 std::shared_ptr<DScene> d_scene,
                 ptr<float> screen_gradient_image,
-                ptr<float> debug_image) {
+                ptr<float> debug_image,
+                const Matrix4x4 &m_transf) {
     #ifdef __NVCC__
         int old_device_id = -1;
         if (scene.use_gpu) {
@@ -510,7 +511,9 @@ namespace edge_sampling {
                         d_ray_differentials,
                         d_points,
                         d_bsdf_wos,
-                        d_light_wos);
+                        d_light_wos,
+                        screen_gradient_image.get(),
+                        m_transf);
 
                     if (scene.use_secondary_edge_sampling) {
                         ////////////////////////////////////////////////////////////////////////////////
@@ -723,7 +726,9 @@ namespace edge_sampling {
                                                             edge_contribs,
                                                             d_points,
                                                             d_scene->shapes.view(0, d_scene->shapes.size()),
-                                                            debug_image.get());
+                                                            debug_image.get(),
+                                                            screen_gradient_image.get(),
+                                                            m_transf);
                         ////////////////////////////////////////////////////////////////////////////////
                     }
 
@@ -786,7 +791,8 @@ namespace edge_sampling {
                                         d_scene.get(),
                                         d_ignore_camera_samples,
                                         debug_image.get(),
-                                        screen_gradient_image.get());
+                                        screen_gradient_image.get(),
+                                        m_transf);
                 }
 
                 /////////////////////////////////////////////////////////////////////////////////
@@ -970,7 +976,8 @@ namespace edge_sampling {
                         d_scene->shapes.view(0, d_scene->shapes.size()),
                         d_scene->camera,
                         debug_image.get(),
-                        screen_gradient_image.get());
+                        screen_gradient_image.get(),
+                        m_transf);
                 }
                 /////////////////////////////////////////////////////////////////////////////////
             }

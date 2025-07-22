@@ -5,6 +5,7 @@
 #include "channels.h"
 #include "pathtracer.h"
 #include "warp_field.h"
+#include "matrix.h"
 #include <memory>
 
 struct Scene;
@@ -79,6 +80,7 @@ namespace vfield {
                 ptr<float> d_rendered_image,
                 std::shared_ptr<DScene> d_scene,
                 ptr<float> screen_gradient_image,
-                ptr<float> debug_image);
+                ptr<float> debug_image,
+                const Matrix4x4 &m_transf);
 
 };

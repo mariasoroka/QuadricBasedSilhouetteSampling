@@ -346,6 +346,18 @@ struct d_path_contribs_accumulator {
                             d_light_vertices[1]);
                         atomic_add(&d_shapes[light_isect.shape_id].vertices[3 * light_tri_index[2]],
                             d_light_vertices[2]);
+                        if (! TEASER) {
+                            if (screen_gradient_image != nullptr && light_isect.shape_id == SHAPE_SELECT) {
+                                screen_gradient_image[2 * pixel_id + 0] += (d_light_vertices[0][DIM_SELECT] + d_light_vertices[1][DIM_SELECT] + d_light_vertices[2][DIM_SELECT]);
+                                screen_gradient_image[2 * pixel_id + 1] += (d_light_vertices[0][DIM_SELECT] + d_light_vertices[1][DIM_SELECT] + d_light_vertices[2][DIM_SELECT]);
+                            }
+                        }
+                        else {
+                            if (screen_gradient_image != nullptr && light_isect.shape_id >= 1 && light_isect.shape_id <=4) {
+                                screen_gradient_image[2 * pixel_id + 0] += (d_light_vertices[0][DIM_SELECT_TEASER] + d_light_vertices[1][DIM_SELECT_TEASER] + d_light_vertices[2][DIM_SELECT_TEASER]);
+                                screen_gradient_image[2 * pixel_id + 1] += (d_light_vertices[0][DIM_SELECT_TEASER] + d_light_vertices[1][DIM_SELECT_TEASER] + d_light_vertices[2][DIM_SELECT_TEASER]);
+                            }
+                        }
                     }
                 }
             } else if (scene.envmap != nullptr) {
@@ -581,6 +593,18 @@ struct d_path_contribs_accumulator {
                     d_bsdf_v_p[1]);
                 atomic_add(&d_shapes[bsdf_isect.shape_id].vertices[3 * bsdf_tri_index[2]],
                     d_bsdf_v_p[2]);
+                if (! TEASER) {
+                    if (screen_gradient_image != nullptr && bsdf_isect.shape_id == SHAPE_SELECT) {
+                        screen_gradient_image[2 * pixel_id + 0] += (d_bsdf_v_p[0][DIM_SELECT] + d_bsdf_v_p[1][DIM_SELECT] + d_bsdf_v_p[2][DIM_SELECT]);
+                        screen_gradient_image[2 * pixel_id + 1] += (d_bsdf_v_p[0][DIM_SELECT] + d_bsdf_v_p[1][DIM_SELECT] + d_bsdf_v_p[2][DIM_SELECT]);
+                    }
+                }
+                else {
+                    if (screen_gradient_image != nullptr && bsdf_isect.shape_id >= 1 && bsdf_isect.shape_id <=4) {
+                        screen_gradient_image[2 * pixel_id + 0] += (d_bsdf_v_p[0][DIM_SELECT_TEASER] + d_bsdf_v_p[1][DIM_SELECT_TEASER] + d_bsdf_v_p[2][DIM_SELECT_TEASER]);
+                        screen_gradient_image[2 * pixel_id + 1] += (d_bsdf_v_p[0][DIM_SELECT_TEASER] + d_bsdf_v_p[1][DIM_SELECT_TEASER] + d_bsdf_v_p[2][DIM_SELECT_TEASER]);
+                    }
+                }
                 if (has_uvs(bsdf_shape)) {
                     auto uv_tri_ind = bsdf_tri_index;
                     if (bsdf_shape.uv_indices != nullptr) {
@@ -764,6 +788,8 @@ struct d_path_contribs_accumulator {
     SurfacePoint *d_shading_points;
     Vector3* d_bsdf_wos;
     Vector3* d_light_wos;
+    float* screen_gradient_image;
+    const Matrix4x4 &m_transf;
 };
 
 void accumulate_path_contribs(const Scene &scene,
@@ -839,7 +865,9 @@ void d_accumulate_path_contribs(const Scene &scene,
                                 BufferView<RayDifferential> d_incoming_ray_differentials,
                                 BufferView<SurfacePoint> d_shading_points,
                                 BufferView<Vector3> d_bsdf_wos,
-                                BufferView<Vector3> d_light_wos) {
+                                BufferView<Vector3> d_light_wos,
+                                float *screen_gradient_image,
+                                const Matrix4x4 &m_transf) {
     parallel_for(d_path_contribs_accumulator{
         get_flatten_scene(scene),
         active_pixels.begin(),
@@ -875,6 +903,8 @@ void d_accumulate_path_contribs(const Scene &scene,
         d_incoming_ray_differentials.begin(),
         d_shading_points.begin(),
         d_bsdf_wos.begin(),
-        d_light_wos.begin()},
+        d_light_wos.begin(),
+        screen_gradient_image,
+        m_transf},
         active_pixels.size(), scene.use_gpu);
 }

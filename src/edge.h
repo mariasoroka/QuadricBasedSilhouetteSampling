@@ -266,7 +266,8 @@ void compute_primary_edge_derivatives(const Scene &scene,
                                       BufferView<DShape> d_shapes,
                                       DCamera d_camera,
                                       float *debug_image,
-                                      float *screen_gradient_image);
+                                      float *screen_gradient_image,
+                                      const Matrix4x4 &m_transf);
 
 void sample_secondary_edges(const Scene &scene,
                             const BufferView<int> &active_pixels,
@@ -304,4 +305,9 @@ void accumulate_secondary_edge_derivatives(const Scene &scene,
                                            const BufferView<Real> &edge_contribs,
                                            BufferView<SurfacePoint> d_points,
                                            BufferView<DShape> d_shapes,
-                                           float* debug_image);
+                                           float* debug_image,
+                                           float* screen_gradient_image,
+                                           const Matrix4x4 &m_transf);
+
+
+

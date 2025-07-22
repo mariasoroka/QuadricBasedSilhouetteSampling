@@ -82,6 +82,19 @@ struct d_primary_intersector {
                 atomic_add(&d_shapes[shape_id].colors[3 * ind[1]], d_v_c[1]);
                 atomic_add(&d_shapes[shape_id].colors[3 * ind[2]], d_v_c[2]);
             }
+            if (! TEASER) {
+                if (screen_gradient_image != nullptr && shape_id == SHAPE_SELECT) {
+                    screen_gradient_image[2 * pixel_idx + 0] += (d_v_p[0][DIM_SELECT] + d_v_p[1][DIM_SELECT] + d_v_p[2][DIM_SELECT]);
+                    screen_gradient_image[2 * pixel_idx + 1] += (d_v_p[0][DIM_SELECT] + d_v_p[1][DIM_SELECT] + d_v_p[2][DIM_SELECT]);
+
+                }
+            }
+            else {
+                if (screen_gradient_image != nullptr && shape_id >= 1 && shape_id <=4) {
+                    screen_gradient_image[2 * pixel_idx + 0] += (d_v_p[0][DIM_SELECT_TEASER] + d_v_p[1][DIM_SELECT_TEASER] + d_v_p[2][DIM_SELECT_TEASER]);
+                    screen_gradient_image[2 * pixel_idx + 1] += (d_v_p[0][DIM_SELECT_TEASER] + d_v_p[1][DIM_SELECT_TEASER] + d_v_p[2][DIM_SELECT_TEASER]);
+                }
+            }
         }
 
         // Ray differential computation
@@ -119,10 +132,6 @@ struct d_primary_intersector {
             d_local_pos[pixel_idx] = d_local;
         }
 
-        if (screen_gradient_image != nullptr) {
-            screen_gradient_image[2 * pixel_idx + 0] += (float)d_screen_pos[0];
-            screen_gradient_image[2 * pixel_idx + 1] += (float)d_screen_pos[1];
-        }
     }
 
     const Camera camera;
@@ -140,6 +149,7 @@ struct d_primary_intersector {
     Vector2 *d_local_pos;
     float *debug_image; 
     float *screen_gradient_image;
+    const Matrix4x4 &m_transf;
 };
 
 void d_primary_intersection(const Scene &scene,
@@ -154,7 +164,8 @@ void d_primary_intersection(const Scene &scene,
                             DScene *d_scene,
                             BufferView<Vector2> &d_local_pos,
                             float *debug_image,
-                            float *screen_gradient_image) {
+                            float *screen_gradient_image,
+                            const Matrix4x4 &m_transf) {
     parallel_for(d_primary_intersector{
         scene.camera,
         scene.shapes.data,
@@ -170,5 +181,6 @@ void d_primary_intersection(const Scene &scene,
         d_scene->camera,
         d_local_pos.begin(),
         debug_image,
-        screen_gradient_image}, active_pixels.size(), scene.use_gpu);
+        screen_gradient_image,
+        m_transf}, active_pixels.size(), scene.use_gpu);
 }

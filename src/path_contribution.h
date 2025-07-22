@@ -66,4 +66,6 @@ void d_accumulate_path_contribs(const Scene &scene,
                                 BufferView<RayDifferential> d_incoming_ray_differentials,
                                 BufferView<SurfacePoint> d_shading_points,
                                 BufferView<Vector3> d_bsdf_wos,
-                                BufferView<Vector3> d_light_wos);
+                                BufferView<Vector3> d_light_wos,
+                                float* screen_gradient_image,
+                                const Matrix4x4 &m_transf);

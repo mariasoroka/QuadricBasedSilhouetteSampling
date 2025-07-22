@@ -1051,7 +1051,8 @@ class RenderFunction(torch.autograd.Function):
     def visualize_screen_gradient_class(grad_img: torch.Tensor,
                                   seed: int,
                                   scene: pyredner.Scene,
-                                  integrator: pyredner.integrators.Integrator = pyredner.integrators.EdgeSamplingIntegrator()):
+                                  integrator: pyredner.integrators.Integrator = pyredner.integrators.EdgeSamplingIntegrator(),
+                                  matrix: redner.Matrix4x4 = redner.Matrix4x4.identity()):
         """
             Given a serialized scene and output an 2-channel image,
             which visualizes the derivatives of pixel color with respect to 
@@ -1100,7 +1101,8 @@ class RenderFunction(torch.autograd.Function):
         integrator.render_screen_gradient(seed, scene,
                                           redner.float_ptr(grad_img.data_ptr()),
                                           buffers.d_scene,
-                                          redner.float_ptr(screen_gradient_image.data_ptr())
+                                          redner.float_ptr(screen_gradient_image.data_ptr()),
+                                          matrix
                                          )
         time_elapsed = time.time() - start
         if get_print_timing():
