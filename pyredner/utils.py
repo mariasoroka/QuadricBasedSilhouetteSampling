@@ -56,7 +56,7 @@ def SH_reconstruct(coeffs, res):
             result = result + sh_factor.view(sh_factor.shape[0], sh_factor.shape[1], 1) * coeffs[:, i]
             i += 1
     result = torch.max(result,
-        torch.zeros(res[1], res[0], coeffs.shape[0], device = coeffs.device))
+        torch.zeros(res[0], res[1], coeffs.shape[0], device = coeffs.device))
     return result
 #######################################################################################
 
@@ -160,7 +160,7 @@ def generate_quad_light(position: torch.Tensor,
                         look_at: torch.Tensor,
                         size: torch.Tensor,
                         intensity: torch.Tensor,
-                        directly_visible: Optional[bool] = None):
+                        directly_visible: bool = True):
     """
         Generate a pyredner.Object that is a quad light source.
 
@@ -174,7 +174,7 @@ def generate_quad_light(position: torch.Tensor,
             1-d tensor of size 2
         intensity: torch.Tensor
             1-d tensor of size 3
-        directly_visible: Optional[bool]
+        directly_visible: boolean
             Can the camera see the light source directly?
 
         Returns
