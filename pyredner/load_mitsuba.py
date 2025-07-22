@@ -78,17 +78,62 @@ def parse_camera(node):
         if 'name' in child.attrib:
             if child.attrib['name'] == 'fov':
                 fov = torch.tensor([float(child.attrib['value'])])
-            elif child.attrib['name'] == 'toWorld':
-                has_lookat = False
+            elif child.attrib['name'] == 'to_world':
+                ret = torch.eye(4)
                 for grandchild in child:
-                    if grandchild.tag.lower() == 'lookat':
-                        has_lookat = True
-                        position = parse_vector(grandchild.attrib['origin'])
-                        look_at = parse_vector(grandchild.attrib['target'])
-                        up = parse_vector(grandchild.attrib['up'])
-                if not has_lookat:
-                    print('Unsupported Mitsuba scene format: please use a look at transform')
-                    assert(False)
+                    if grandchild.tag == 'matrix':
+                        value = torch.from_numpy(\
+                            np.reshape(\
+                                # support both ',' and ' ' seperator
+                                np.fromstring(grandchild.attrib['value'], dtype=np.float32, sep=',' if ',' in grandchild.attrib['value'] else ' '),
+                                (4, 4)))
+                        ret = value @ ret
+                    elif grandchild.tag == 'translate':
+                        translation = torch.from_numpy(\
+                            np.reshape(\
+                                # support both ',' and ' ' seperator
+                                np.fromstring(grandchild.attrib['value'], dtype=np.float32, sep=',' if ',' in grandchild.attrib['value'] else ' '),
+                                (3)))
+                        value = transform.gen_translate_matrix(translation)
+                        ret = value @ ret
+
+                    elif grandchild.tag == 'rotate':
+                        angle_x = float(grandchild.attrib['angle']) if 'x' in grandchild.attrib else 0.0
+                        angle_y = float(grandchild.attrib['angle']) if 'y' in grandchild.attrib else 0.0
+                        angle_z = float(grandchild.attrib['angle']) if 'z' in grandchild.attrib else 0.0
+                        angle_x = transform.radians(angle_x)
+                        angle_y = transform.radians(angle_y)
+                        angle_z = transform.radians(angle_z)
+
+                        rotation_x = torch.zeros(4, 4)
+                        rotation_x[0, 0] = 1.0
+                        rotation_x[1, 1] = math.cos(angle_x)
+                        rotation_x[1, 2] = -math.sin(angle_x)
+                        rotation_x[2, 1] = math.sin(angle_x)
+                        rotation_x[2, 2] = math.cos(angle_x)
+                        rotation_x[3, 3] = 1.0
+
+                        rotation_y = torch.zeros(4, 4)
+                        rotation_y[0, 0] = math.cos(angle_y)
+                        rotation_y[0, 2] = math.sin(angle_y)
+                        rotation_y[1, 1] = 1.0
+                        rotation_y[2, 0] = -math.sin(angle_y)
+                        rotation_y[2, 2] = math.cos(angle_y)
+                        rotation_y[3, 3] = 1.0
+
+                        rotation_z = torch.zeros(4, 4)
+                        rotation_z[0, 0] = math.cos(angle_z)
+                        rotation_z[0, 1] = -math.sin(angle_z)
+                        rotation_z[1, 0] = math.sin(angle_z)
+                        rotation_z[1, 1] = math.cos(angle_z)
+                        rotation_z[2, 2] = 1.0
+                        rotation_z[3, 3] = 1.0
+
+                        value = rotation_z @ rotation_y @ rotation_x
+
+                        ret = value @ ret
+                        
+                cam_to_world = ret
         if child.tag == 'film':
             for grandchild in child:
                 if 'name' in grandchild.attrib:
@@ -101,6 +146,7 @@ def parse_camera(node):
                            look_at      = look_at,
                            up           = up,
                            fov          = fov,
+                           cam_to_world = cam_to_world,
                            clip_near    = clip_near,
                            resolution   = resolution)
 

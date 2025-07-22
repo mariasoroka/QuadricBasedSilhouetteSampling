@@ -54,6 +54,9 @@ struct Camera {
         if (cam_to_world_.get() != nullptr) {
             cam_to_world = Matrix4x4(cam_to_world_.get());
             world_to_cam = Matrix4x4(world_to_cam_.get());
+            position = Vector3{cam_to_world(0, 3),
+                               cam_to_world(1, 3),
+                               cam_to_world(2, 3)};
             use_look_at = false;
         } else {
             position = Vector3{position_[0], position_[1], position_[2]};
@@ -146,6 +149,8 @@ inline void local_to_screen_pos(const Camera &camera,
     auto viewport_height =
             camera.viewport_end.y - camera.viewport_beg.y;
 
+    // auto pixel_size_x = Real(0.5);
+    // auto pixel_size_y = Real(0.5);
     auto pixel_size_x = Real(0.5) / viewport_width;
     auto pixel_size_y = Real(0.5) / viewport_height;
     
@@ -294,8 +299,8 @@ inline void sample_to_local_pos(const Camera &camera,
                                  Vector2 &local_pos // Pixel-centered space sample point.
                                ) {
     if (camera.filter_type == FilterType::Gaussian) {
-        auto normal_sample_x = sqrt(-2 * log(sample[0]) * SCREEN_FILTER_VARIANCE) * sin(M_PI * 2 * sample[1]);
-        auto normal_sample_y = sqrt(-2 * log(sample[0]) * SCREEN_FILTER_VARIANCE) * cos(M_PI * 2 * sample[1]);
+        auto normal_sample_x = sqrt(-2 * log(1 - sample[0]) * SCREEN_FILTER_VARIANCE) * sin(M_PI * 2 * sample[1]);
+        auto normal_sample_y = sqrt(-2 * log(1 - sample[0]) * SCREEN_FILTER_VARIANCE) * cos(M_PI * 2 * sample[1]);
         local_pos = Vector2{normal_sample_x, normal_sample_y};
     } else if (camera.filter_type == FilterType::Box) { 
         local_pos = Vector2{sample[0] - 0.5, sample[1] - 0.5};
