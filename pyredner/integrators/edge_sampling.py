@@ -17,7 +17,7 @@ class EdgeSamplingIntegrator(Integrator):
                   max_bounces = 2,
                   channels = [redner.channels.radiance],
                   sampler_type = redner.SamplerType.independent,
-                  sample_pixel_center = True,
+                  sample_pixel_center = False,
                   use_primary_edge_sampling = True,
                   use_secondary_edge_sampling = True,
                   ):
