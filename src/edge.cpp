@@ -1317,7 +1317,7 @@ struct secondary_edge_sampler {
         }
     }
 
-    static constexpr auto num_h_samples = 16;
+    static constexpr auto num_h_samples = 1;
 
     DEVICE bool intersect_edge(const Edge &edge,
                                const Ray &nee_ray) {
