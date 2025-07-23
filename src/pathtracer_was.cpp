@@ -723,7 +723,7 @@ namespace vfield {
                     auto active_pixels =
                         path_buffer.active_pixels.view(depth * num_pixels, num_actives);
                     const auto prev_active_pixels = (depth != 0) ?
-                        path_buffer.active_pixels.view((depth - 1) * num_pixels, num_active_pixels[depth]) :
+                        path_buffer.active_pixels.view((depth - 1) * num_pixels, num_active_pixels[depth - 1]) :
                         path_buffer.primary_active_pixels.view(0, num_actives_primary);
                     auto d_next_throughputs = path_buffer.d_next_throughputs.view(0, num_pixels);
                     auto d_next_rays = path_buffer.d_next_rays.view(0, num_pixels);
@@ -1064,11 +1064,11 @@ namespace vfield {
                         // This quantity tracks the contribution that is affected by changes to
                         // bsdf_ray.dir AND nee_ray.dir
                         parallel_for(sum_buffers<Vector3>{
-                            prev_active_pixels.begin(),
+                            active_pixels.begin(),
                             prev_primary_contribs.begin(), // A
                             primary_contribs.begin(),      // B
                             prev_primary_contribs.begin()}, // A + B
-                            prev_active_pixels.size(), scene.use_gpu);
+                            active_pixels.size(), scene.use_gpu);
 
                     }
     
