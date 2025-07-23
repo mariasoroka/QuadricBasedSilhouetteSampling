@@ -75,10 +75,10 @@ Ray aux_sample(const KernelParameters &kernel_parameters,
         }
     }
 
-    auto azimuth = Vector2{cos(aux_sample.uv.x * M_PI * 2), sin(aux_sample.uv.x * M_PI * 2)};
+    auto azimuth = Vector2{cos(aux_sample.uv.y * M_PI * 2), sin(aux_sample.uv.y * M_PI * 2)};
     
     auto k = kernel_parameters.vMFConcentration; // Concentration parameter.
-    auto elevation = 1 + log(aux_sample.uv.y + exp(-2*k) * (1 - aux_sample.uv.y)) / k;
+    auto elevation = 1 + log(max(aux_sample.uv.x + exp(-2*k) * (1 - aux_sample.uv.x), 1e-6)) / k;
 
     auto sin_theta = sqrt(1 - elevation * elevation);
     // von Mises-Fisher unit vector sampled about the z-axis.
