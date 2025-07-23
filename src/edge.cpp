@@ -299,7 +299,7 @@ EdgeSampler::EdgeSampler(const Scene &scene,
         edges.begin() + current_num_edges, edge_remover{shapes_buffer.begin()});
     edges.count = edges_end - edges.begin();
 
-    if (scene.use_primary_edge_sampling) {
+    if (use_primary_edge_sampling) {
         // Primary edge sampler:
         primary_edges_pmf = Buffer<Real>(scene.use_gpu, edges.count);
         primary_edges_cdf = Buffer<Real>(scene.use_gpu, edges.count);
@@ -334,8 +334,7 @@ EdgeSampler::EdgeSampler(const Scene &scene,
                 thrust::identity<Real>(), Real(0), thrust::plus<Real>());
         }
     }
-
-    if (scene.use_secondary_edge_sampling) {
+    if (use_secondary_edge_sampling) {
         // Secondary edge sampler
         if (!c_use_edge_tree) {
             // Build a global distribution if we are not using edge tree

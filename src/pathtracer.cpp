@@ -196,7 +196,8 @@ namespace edge_sampling {
             }
         }
     #endif
-
+        scene.use_primary_edge_sampling = options.use_primary_edge_sampling;
+        scene.use_secondary_edge_sampling = options.use_secondary_edge_sampling;
         scene.make_edge_sampler(options.use_primary_edge_sampling, options.use_secondary_edge_sampling);
 
         parallel_init();
@@ -515,7 +516,7 @@ namespace edge_sampling {
                         screen_gradient_image.get(),
                         m_transf);
 
-                    if (scene.use_secondary_edge_sampling) {
+                    if (options.use_secondary_edge_sampling) {
                         ////////////////////////////////////////////////////////////////////////////////
                         // Sample edges for secondary visibility
                         auto num_edge_samples = 2 * num_actives;
