@@ -16,7 +16,7 @@
 // Set this to false to fallback to importance resampling if edge tree doesn't work
 constexpr bool c_use_edge_tree = true;
 constexpr bool c_uniform_sampling = false;
-constexpr bool c_use_nee_ray = true;
+constexpr bool c_use_nee_ray = false;
 
 // namespace ltc {
 
