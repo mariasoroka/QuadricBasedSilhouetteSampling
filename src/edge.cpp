@@ -2100,47 +2100,29 @@ struct secondary_edge_weights_updater {
                 return;
             }
 
-            auto n_dir = dir / sqrt(dist_sq);
-            auto geometry_term = fabs(dot(edge_surface_point.geom_normal, n_dir)) / dist_sq;
-
-
-            // Intersection Jacobian Jm(t) (Eq. 18 in the paper)
-            auto isect_jacobian = intersect_jacobian(shading_point.position,
-                                                     edge_record.edge_pt,
-                                                     edge_surface_point.position,
-                                                     edge_surface_point.geom_normal,
-                                                     edge_record.mwt);
-            // area of projection
             auto v0 = Vector3{get_v0(scene.shapes, edge_record.edge)};
             auto v1 = Vector3{get_v1(scene.shapes, edge_record.edge)};
-            auto half_plane_normal = normalize(cross(v0 - shading_point.position,
-                                                     v1 - shading_point.position));
-            // ||Jm(t)|| / ||n_m x n_h|| in Eq. 15 in the paper
-            auto line_jacobian = length(isect_jacobian) /
-                length(cross(edge_surface_point.geom_normal, half_plane_normal)); 
             auto p = shading_point.position;
-            auto d0 = v0 - p;
-            auto d1 = v1 - p;
-            auto dirac_jacobian = length(cross(d0, d1)); // Eq. 16 in the paper
-            auto w = line_jacobian / dirac_jacobian;
-
-            edge_throughput *= geometry_term * w;
-            assert(isfinite(geometry_term));
-            assert(isfinite(w));
-        } else if (scene.envmap != nullptr) {
-            // Hit an environment light
-            auto p = shading_point.position;
-            auto v0 = Vector3{get_v0(scene.shapes, edge_record.edge)};
-            auto v1 = Vector3{get_v1(scene.shapes, edge_record.edge)};
-            auto d0 = v0 - p;
-            auto d1 = v1 - p;
-            auto dirac_jacobian = length(cross(d0, d1)); // Eq. 16 in the paper
-            // TODO: check the correctness of this
-            auto line_jacobian = 1 / length_squared(edge_record.edge_pt - p);
-            auto w = line_jacobian / dirac_jacobian;
-
+            auto m = edge_surface_point.position;
+            auto nm = edge_surface_point.geom_normal;
+            auto wt = edge_record.edge_pt;
+            auto norm = length(m - p);
+            auto dirn = normalize(m - p);
+            auto w_num = length(edge_record.mwt) * dot(nm, wt);
+            auto w_den = length(v0 - v1) * length(wt) * length(wt) * length(wt) * dot(m - p, nm);
+            auto w = w_num / w_den;
             edge_throughput *= w;
-        } else if (scene.vmflight != nullptr) {
+            assert(isfinite(w));
+        } else if (scene.envmap != nullptr && edge_isect.infinity()) {
+            // Hit an environment light
+            auto v0 = Vector3{get_v0(scene.shapes, edge_record.edge)};
+            auto v1 = Vector3{get_v1(scene.shapes, edge_record.edge)};
+            Real w_num = length(edge_record.mwt) * dot(edge_record.edge_pt, shading_point.geom_normal);
+            Real norm = length(edge_record.edge_pt);
+            Real w_den = length(v0 - v1) * norm * norm * norm;
+            Real w = w_num / w_den;
+            edge_throughput *= w;
+        } else if (scene.vmflight != nullptr && edge_isect.infinity()) {
             // Hit the vMF light.
             auto p = shading_point.position;
             auto v0 = Vector3{get_v0(scene.shapes, edge_record.edge)};
@@ -2249,7 +2231,9 @@ struct secondary_edge_derivatives_accumulator {
         if (edge_record.edge.shape_id < 0) {
             return;
         }
-
+        const auto &shading_isect = shading_isects[pixel_id];
+        const int edge_isect_type0 = edge_intersection_type[2 * idx + 0];
+        const int edge_isect_type1 = edge_intersection_type[2 * idx + 1];
         auto edge_contrib0 = edge_contribs[2 * idx + 0];
         auto edge_contrib1 = edge_contribs[2 * idx + 1];
         const auto &edge_surface_point0 = edge_surface_points[2 * idx + 0];
@@ -2267,17 +2251,54 @@ struct secondary_edge_derivatives_accumulator {
             auto d0 = v0 - p;
             auto d1 = v1 - p;
             // Eq. 16 in the paper (see the errata)
-            auto dp = cross(d1, d0) + cross(x - p, d1) + cross(d0, x - p);
-            auto dv0 = cross(d1, x - p);
-            auto dv1 = cross(x - p, d0);
+            auto dp = cross(d1, d0) + cross(x, d1) + cross(d0, x);
+            auto dv0 = cross(d1, x);
+            auto dv1 = cross(x, d0);
             dcolor_dp += dp * edge_contrib;
             dcolor_dv0 += dv0 * edge_contrib;
             dcolor_dv1 += dv1 * edge_contrib;
         };
-        grad(shading_point.position, edge_surface_point0, edge_contrib0);
-        grad(shading_point.position, edge_surface_point1, edge_contrib1);
-        //assert(isfinite(edge_contrib0));
-        //assert(isfinite(edge_contrib1));
+
+        auto norm_dir_0 = normalize(edge_surface_point0 - shading_point.position);
+        auto norm_dir_1 = normalize(edge_surface_point1 - shading_point.position);
+
+        bool valid_geom0 = (edge_isect_type0 == 0) && (dot(shading_point.geom_normal, norm_dir_0) > 0);
+        bool valid_geom1 = (edge_isect_type1 == 0) && (dot(shading_point.geom_normal, norm_dir_1) > 0);
+
+        bool valid_envmap0 = (scene.envmap != nullptr && edge_isect_type0 == 1) && (dot(shading_point.geom_normal, normalize(edge_record.edge_pt)) > 0);
+        bool valid_envmap1 = (scene.envmap != nullptr && edge_isect_type1 == 1) && (dot(shading_point.geom_normal, normalize(edge_record.edge_pt)) > 0);
+
+        bool valid0 = valid_geom0 || valid_envmap0;
+        bool valid1 = valid_geom1 || valid_envmap1;
+
+        if (!valid0 || !valid1) {
+            return;
+        }
+
+        if (edge_isect_type0 == 0) {
+            grad(shading_point.position, edge_surface_point0 - shading_point.position, edge_contrib0);
+        }
+        else if (scene.envmap != nullptr && edge_isect_type0 == 1) {
+            auto dir = edge_record.edge_pt / dot(edge_record.edge_pt, shading_point.geom_normal);
+            grad(shading_point.position, dir, edge_contrib0);
+        }
+        else if (scene.vmflight != nullptr && edge_isect_type0 == 1) {
+            assert (false);
+        }
+
+        if (edge_isect_type1 == 0) {
+            grad(shading_point.position, edge_surface_point1 - shading_point.position, edge_contrib1);
+        }
+        else if (scene.envmap != nullptr && edge_isect_type1 == 1) {
+            auto dir = edge_record.edge_pt / dot(edge_record.edge_pt, shading_point.geom_normal);
+            grad(shading_point.position, dir, edge_contrib1);
+        }
+        else if (scene.vmflight != nullptr && edge_isect_type1 == 1) {
+            assert (false);
+        }
+
+        assert(isfinite(edge_contrib0));
+        assert(isfinite(edge_contrib1));
         assert(isfinite(dcolor_dp));
 
         d_points[pixel_id].position += dcolor_dp;
@@ -2299,11 +2320,14 @@ struct secondary_edge_derivatives_accumulator {
             }
         }
     }
+    const FlattenScene scene;
     const Shape *shapes;
     const int *active_pixels;
     const SurfacePoint *shading_points;
+    const Intersection *shading_isects;
     const SecondaryEdgeRecord *edge_records;
     const Vector3 *edge_surface_points;
+    const int *edge_intersection_type;
     const Real *edge_contribs;
     SurfacePoint *d_points;
     DShape *d_shapes;
@@ -2315,8 +2339,10 @@ struct secondary_edge_derivatives_accumulator {
 void accumulate_secondary_edge_derivatives(const Scene &scene,
                                            const BufferView<int> &active_pixels,
                                            const BufferView<SurfacePoint> &shading_points,
+                                           const BufferView<Intersection> &shading_isects,
                                            const BufferView<SecondaryEdgeRecord> &edge_records,
                                            const BufferView<Vector3> &edge_surface_points,
+                                           const BufferView<int> &edge_intersection_type,
                                            const BufferView<Real> &edge_contribs,
                                            BufferView<SurfacePoint> d_points,
                                            BufferView<DShape> d_shapes,
@@ -2324,11 +2350,14 @@ void accumulate_secondary_edge_derivatives(const Scene &scene,
                                            float* screen_gradient_image,
                                            const Matrix4x4 &m_transf) {
     parallel_for(secondary_edge_derivatives_accumulator{
+        get_flatten_scene(scene),
         scene.shapes.data,
         active_pixels.begin(),
         shading_points.begin(),
+        shading_isects.begin(),
         edge_records.begin(),
         edge_surface_points.begin(),
+        edge_intersection_type.begin(),
         edge_contribs.begin(),
         d_points.begin(),
         d_shapes.begin(),

@@ -16,6 +16,10 @@ struct Intersection {
     bool valid() const {
         return shape_id >= 0 && tri_id >= 0;
     }
+    DEVICE 
+    bool infinity() const {
+        return shape_id == -2;
+    }
 
     DEVICE
     friend bool operator==(const Intersection& l, const Intersection& r) {

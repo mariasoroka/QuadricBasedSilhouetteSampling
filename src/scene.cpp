@@ -624,11 +624,15 @@ void intersect(const Scene &scene,
                 rtc_ray_hit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
                 // TODO: switch to rtcIntersect16
                 rtcIntersect1(scene.embree_scene, &rtc_context, &rtc_ray_hit);
-                if (rtc_ray_hit.hit.geomID == RTC_INVALID_GEOMETRY_ID ||
-                         length_squared(ray.dir) <= 1e-3f) {
+                if (rtc_ray_hit.hit.geomID == RTC_INVALID_GEOMETRY_ID) {
+                    intersections[pixel_id] = Intersection{-2, -1};
+                    new_ray_differentials[pixel_id] = ray_differentials[pixel_id];
+                }
+                else if(length_squared(ray.dir) <= 1e-3f) {
                     intersections[pixel_id] = Intersection{-1, -1};
                     new_ray_differentials[pixel_id] = ray_differentials[pixel_id];
-                } else {
+                } 
+                else {
                     auto shape_id = (int)rtc_ray_hit.hit.geomID;
                     auto tri_id = (int)rtc_ray_hit.hit.primID;
                     intersections[pixel_id] =

@@ -99,6 +99,7 @@ namespace edge_sampling {
             secondary_edge_records = Buffer<SecondaryEdgeRecord>(use_gpu, num_pixels);
             edge_contribs = Buffer<Real>(use_gpu, 2 * num_pixels);
             edge_surface_points = Buffer<Vector3>(use_gpu, 2 * num_pixels);
+            edge_intersection_type = Buffer<int>(use_gpu, 2 * num_pixels);
 
             tmp_light_samples = Buffer<LightSample>(use_gpu, num_pixels);
             tmp_bsdf_samples = Buffer<BSDFSample>(use_gpu, num_pixels);
@@ -148,6 +149,7 @@ namespace edge_sampling {
         Buffer<SecondaryEdgeRecord> secondary_edge_records;
         Buffer<Real> edge_contribs;
         Buffer<Vector3> edge_surface_points;
+        Buffer<int> edge_intersection_type;
         // For sharing RNG between pixels
         Buffer<LightSample> tmp_light_samples;
         Buffer<BSDFSample> tmp_bsdf_samples;
@@ -177,6 +179,42 @@ namespace edge_sampling {
         const int *active_pixels;
         const SurfacePoint *sp;
         Vector3 *p;
+    };
+    // Extract intersection type from intersection
+    struct get_intersection_type {
+        DEVICE void operator()(int idx) {
+            const auto &edge_record = edge_records[idx];
+            if (edge_record.edge.shape_id < 0) {
+                itr_type[2 * idx + 0] = 2;
+                itr_type[2 * idx + 1] = 2;
+            }
+            else {
+                if (itr[2 * idx + 0].valid()){
+                    itr_type[2 * idx + 0] = 0;
+                }
+                else if (itr[2 * idx + 0].infinity()){
+                    itr_type[2 * idx + 0] = 1;
+                }
+                else{
+                    itr_type[2 * idx + 0] = 2;
+                }
+
+                if (itr[2 * idx + 1].valid()){
+                    itr_type[2 * idx + 1] = 0;
+                }
+                else if (itr[2 * idx + 1].infinity()){
+                    itr_type[2 * idx + 1] = 1;
+                }
+                else{
+                    itr_type[2 * idx + 1] = 2;
+                }
+            }
+        }
+
+        const int *active_pixels;
+        const SecondaryEdgeRecord *edge_records;
+        const Intersection *itr;
+        int *itr_type;
     };
 
     void render(Scene &scene,
@@ -575,6 +613,14 @@ namespace edge_sampling {
                                                     edge_shading_points,
                                                     edge_records,
                                                     edge_throughputs);
+                        // Record the intersection types for derivatives computation later
+                        auto edge_intersection_type = 
+                            path_buffer.edge_intersection_type.view(0, num_edge_samples);
+                        parallel_for(get_intersection_type{
+                            active_pixels.begin(),
+                            edge_records.begin(),
+                            edge_shading_isects.begin(),
+                            edge_intersection_type.begin()}, active_pixels.size(), scene.use_gpu);
                         // Initialize edge contribution
                         auto edge_contribs = path_buffer.edge_contribs.view(0, num_edge_samples);
                         DISPATCH(scene.use_gpu, thrust::fill,
@@ -722,8 +768,10 @@ namespace edge_sampling {
                         accumulate_secondary_edge_derivatives(scene,
                                                             active_pixels,
                                                             shading_points,
+                                                            shading_isects,
                                                             edge_records,
                                                             edge_surface_points,
+                                                            edge_intersection_type,
                                                             edge_contribs,
                                                             d_points,
                                                             d_scene->shapes.view(0, d_scene->shapes.size()),
