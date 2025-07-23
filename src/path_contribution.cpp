@@ -562,7 +562,7 @@ struct d_path_contribs_accumulator {
                     d_shading_point.position -= d_dir;
                     d_shading_point.position += d_ray.org;
                 }
-                d_bsdf_wo = -d_ray.dir;
+                d_bsdf_wo += d_ray.dir;
 
                 // We ignore backpropagation to bsdf importance sampling
                 // This is still correct given that we ignore the PDFs.
@@ -673,17 +673,16 @@ struct d_path_contribs_accumulator {
                 auto d_bsdf_val = weight * d_scatter_contrib * light_contrib;
                 auto d_light_contrib = weight * d_scatter_contrib * bsdf_val;
 
-                auto d_wo = Vector3{0, 0, 0};
                 auto d_ray_diff = RayDifferential{
                     Vector3{0, 0, 0}, Vector3{0, 0, 0},
                     Vector3{0, 0, 0}, Vector3{0, 0, 0}};
                 // light_contrib = eval_envmap(*scene.envmap, wo, ray_diff)
                 d_envmap_eval(*scene.envmap, wo, ray_diff, d_light_contrib,
-                              *d_envmap, d_wo, d_ray_diff);
+                            *d_envmap, d_bsdf_wo, d_ray_diff);
                 auto d_wi = Vector3{0, 0, 0};
                 // bsdf_val = bsdf(material, shading_point, wi, wo)
                 d_bsdf(material, shading_point, wi, wo, min_rough, d_bsdf_val,
-                       d_material, d_shading_point, d_wi, d_wo);
+                       d_material, d_shading_point, d_wi, d_bsdf_wo);
 
                 // pdf_bsdf = bsdf_pdf(material, shading_point, wi, wo, min_rough)
                 // d_bsdf_pdf(material, shading_point, wi, wo, min_rough, d_pdf_bsdf,
