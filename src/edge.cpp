@@ -456,11 +456,6 @@ struct primary_edge_sampler {
             if (rd != -1) {
                 auto viewport_width = camera.viewport_end.x - camera.viewport_beg.x;
                 auto viewport_height = camera.viewport_end.y - camera.viewport_beg.y;
-                d_color = Vector3{
-                    d_rendered_image[nd * (yi * viewport_width + xi) + rd + 0],
-                    d_rendered_image[nd * (yi * viewport_width + xi) + rd + 1],
-                    d_rendered_image[nd * (yi * viewport_width + xi) + rd + 2]
-                };
 
                 if(camera.filter_type == FilterType::Box) {
                     d_color = Vector3{
@@ -471,7 +466,7 @@ struct primary_edge_sampler {
                 } else if (camera.filter_type == FilterType::Gaussian) {
                     // Aggregate weighted sum of nearest 
                     auto normalization = Real(0);
-                    for(int _kx = -3; _kx <= 3; _kx++)
+                    for(int _kx = -3; _kx <= 3; _kx++) {
                         for(int _ky = -3; _ky <= 3; _ky++) {
                             auto kx = xi + _kx;
                             auto ky = yi + _ky;
@@ -510,10 +505,19 @@ struct primary_edge_sampler {
 
                             normalization += value;
                         }
+                    }
 
-                    if (normalization > Real(1e-15))
+                    if (normalization > Real(1e-15)) {
                         d_color /= normalization;
+                    }
 
+                }
+                else {
+                    d_color = Vector3{
+                        d_rendered_image[nd * (yi * viewport_width + xi) + rd + 0],
+                        d_rendered_image[nd * (yi * viewport_width + xi) + rd + 1],
+                        d_rendered_image[nd * (yi * viewport_width + xi) + rd + 2]
+                    };
                 }
             }
             // The weight is the length of edge divided by the probability
