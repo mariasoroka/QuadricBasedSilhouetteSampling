@@ -669,3 +669,92 @@ inline std::ostream& operator<<(std::ostream &os, const TMatrix4x4<T> &m) {
     }
     return os;
 }
+
+// Find an orthonormal basis (e1, e2, e3) in R^3 s.t. e1 || n. 
+// For that compute QR factorization of m = [ n, i1, i2, i3 ],
+// where i1, i2, i3 are the standard basis vectors in R^3.
+template <typename T>
+inline TMatrix3x3<T> find_basis(const TVector3<T> &n) {
+    TMatrix3x3<T> m;
+
+    T Q[3 * 4];
+    int zero_idx = -1;
+
+    for (int i = 0; i < 3; i++) {
+        Q[i] = n[i];
+    }
+    for (int i = 1; i < 4; i++) {
+        for (int j = 0; j < 3; j++) {
+            if(i - 1 == j) {
+                Q[i * 3 + j] = T(1);
+            }
+            else {
+                Q[i * 3 + j] = T(0);
+            }
+        }
+    }
+
+    for (int i = 0; i < 4; i++) {
+        if (i != 0) {
+            T max = 0;
+            int max_idx = -1;
+
+            for (int j = i; j < 4; j++) {
+                T sum = 0;
+                for (int k = 0; k < 3; k++) {
+                    sum += Q[j * 3 + k] * Q[j * 3 + k];
+                }
+                if (sum > max) {
+                    max = sum;
+                    max_idx = j;
+                }
+            }
+
+            if (max_idx != i && max_idx != -1 && max != 0) {
+                for (int j = 0; j < 3; j++) {
+                    std::swap(Q[i * 3 + j], Q[max_idx * 3 + j]);
+                }
+            }
+            for (int j = 0; j < i; j++) {
+
+                T dot_prod = 0;
+                T norm = 0;
+                for (int k = 0; k < 3; k++) {
+                    dot_prod += Q[i * 3 + k] * Q[j * 3 + k];
+                    norm += Q[j * 3 + k] * Q[j * 3 + k];
+                }
+                if(norm != 0) {
+                    for (int k = 0; k < 3; k++) {
+                        Q[i * 3 + k] -= dot_prod / norm * Q[j * 3 + k];
+                    }
+                }
+            }
+        }
+        T norm = 0;
+        for (int j = 0; j < 3; j++) {
+            norm += Q[i * 3 + j] * Q[i * 3 + j];
+        }
+        norm = sqrt(norm);
+        if (norm >= 1e-6) {
+            for (int j = 0; j < 3; j++) {
+                Q[i * 3 + j] /= norm;
+            }
+        }
+        else {
+            zero_idx = i;
+        }
+
+    }
+
+    if (zero_idx != -1) {
+        for (int j = 0; j < 3; j++) {
+            std::swap(Q[zero_idx * 3 + j], Q[3 * 3 + j]);
+        }
+    }
+
+    m = TMatrix3x3<T>(Q[3], Q[6], Q[0],
+                      Q[4], Q[7], Q[1],
+                      Q[5], Q[8], Q[2]);
+
+    return m;
+}

@@ -460,6 +460,11 @@ PYBIND11_MODULE(redner, m) {
         .def_readwrite("p1", &QuadricIntersection::p1)
         .def_readwrite("p2", &QuadricIntersection::p2);
 
+    py::class_<AABB3>(m, "AABB3", py::module_local())
+        .def(py::init<Vector3, Vector3>())
+        .def_readwrite("p_min", &AABB3::p_min)
+        .def_readwrite("p_max", &AABB3::p_max);
+    m.def("corner", &corner, "");
     m.def("intersect_with_line", &intersect_with_line<double>, "");
     m.def("get_point_on_conic", &get_point_on_conic<double>, "");
     m.def("get_conic_from_quadric", &get_conic_from_quadric<double>, "");
@@ -468,6 +473,8 @@ PYBIND11_MODULE(redner, m) {
     m.def("fit_quadric_file_input", &fit_quadric_file_input<double>, "");
     m.def("compute_LU_py", &compute_LU_py<double>, "");
     m.def("solve_LU_py", &solve_LU_py<double>, "");
+    m.def("find_basis", static_cast<TMatrix3x3<double> (*)(const TVector3<double>&)>(&find_basis<double>), "");
+    m.def("test_aabb", &test_aabb, "");
     /// Tests
     m.def("test_sample_primary_rays", &test_sample_primary_rays, "");
     m.def("test_scene_intersect", &test_scene_intersect, "");
