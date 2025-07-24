@@ -13,6 +13,7 @@
 #include "ptr.h"
 #include "scene.h"
 #include "shape.h"
+#include "quadric.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -436,6 +437,37 @@ PYBIND11_MODULE(redner, m) {
     m.def("render", &edge_sampling::render, "");
     m.def("render_warped", &vfield::render, "");
 
+    py::class_<Conic>(m, "Conic", py::module_local())
+        .def(py::init<Matrix3x3&>())
+        .def_readwrite("matrix", &Conic::matrix);
+
+    py::class_<Quadric>(m, "Quadric", py::module_local())
+        .def(py::init<Matrix4x4&>())
+        .def_readwrite("matrix", &Quadric::matrix);
+
+    py::class_<QuadricPair>(m, "QuadricPair", py::module_local())
+        .def(py::init<Quadric&, Quadric&>())
+        .def_readwrite("quadric1", &QuadricPair::quadric1)
+        .def_readwrite("quadric2", &QuadricPair::quadric2);
+
+    py::class_<ConicIntersection>(m, "ConicIntersection", py::module_local())
+        .def(py::init<Vector3, Vector3>())
+        .def_readwrite("p1", &ConicIntersection::p1)
+        .def_readwrite("p2", &ConicIntersection::p2);
+
+    py::class_<QuadricIntersection>(m, "QuadricIntersection", py::module_local())
+        .def(py::init<Vector4, Vector4>())
+        .def_readwrite("p1", &QuadricIntersection::p1)
+        .def_readwrite("p2", &QuadricIntersection::p2);
+
+    m.def("intersect_with_line", &intersect_with_line<double>, "");
+    m.def("get_point_on_conic", &get_point_on_conic<double>, "");
+    m.def("get_conic_from_quadric", &get_conic_from_quadric<double>, "");
+    m.def("intersect_with_segment", &intersect_with_segment<double>, "");
+    m.def("solve_gen_eig_py", &solve_gen_eig_py<double>, "");
+    m.def("fit_quadric_file_input", &fit_quadric_file_input<double>, "");
+    m.def("compute_LU_py", &compute_LU_py<double>, "");
+    m.def("solve_LU_py", &solve_LU_py<double>, "");
     /// Tests
     m.def("test_sample_primary_rays", &test_sample_primary_rays, "");
     m.def("test_scene_intersect", &test_scene_intersect, "");

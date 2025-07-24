@@ -94,6 +94,7 @@ set(SRCS src/aabb.h
          src/warp_field.h
          src/warp_rr.h
          src/ltc.h
+         src/quadric.h
          xatlas/xatlas.h
          
 

@@ -232,7 +232,7 @@ DEVICE
 inline TVector3<T> operator*(const TMatrix3x3<T> &m, const TVector3<T> &v) {
     TVector3<T> ret;
     for (int i = 0; i < 3; i++) {
-        ret[i] = 0.f;
+        ret[i] = T(0);
         for (int j = 0; j < 3; j++) {
             ret[i] += m(i, j) * v[j];
         }
@@ -384,6 +384,18 @@ inline auto outer_product(const TVector3<T0> &v0, const TVector3<T1> &v1)
             mat(i, j) = v0[i] * v1[j];
         }
     return mat;
+}
+
+template <typename T>
+DEVICE
+inline T minor_det(const TMatrix3x3<T> &m, size_t pivot) {
+    if (pivot == 0) {
+        return m(1, 1) * m(2, 2) - m(1, 2) * m(2, 1);
+    } else if (pivot == 1) {
+        return m(0, 0) * m(2, 2) - m(0, 2) * m(2, 0);
+    } else {
+        return m(0, 0) * m(1, 1) - m(0, 1) * m(1, 0);
+    }
 }
 
 template <typename T>
