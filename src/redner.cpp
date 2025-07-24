@@ -22,22 +22,18 @@ namespace py = pybind11;
 PYBIND11_MODULE(redner, m) {
     m.doc() = "Redner"; // optional module docstring
 
-    py::class_<ptr<float>>(m, "float_ptr")
-        .def(py::init<std::size_t>());
-    py::class_<ptr<int>>(m, "int_ptr")
-        .def(py::init<std::size_t>());
 
-    py::enum_<CameraType>(m, "CameraType")
+    py::enum_<CameraType>(m, "CameraType", py::module_local())
         .value("perspective", CameraType::Perspective)
         .value("orthographic", CameraType::Orthographic)
         .value("fisheye", CameraType::Fisheye)
         .value("panorama", CameraType::Panorama);
 
-    py::enum_<FilterType>(m, "FilterType")
+    py::enum_<FilterType>(m, "FilterType", py::module_local())
         .value("box", FilterType::Box)
         .value("gaussian", FilterType::Gaussian);
 
-    py::class_<Camera>(m, "Camera")
+    py::class_<Camera>(m, "Camera", py::module_local())
         .def(py::init<int,
                       int,
                       ptr<float>, // position
@@ -56,7 +52,7 @@ PYBIND11_MODULE(redner, m) {
         .def_readonly("use_look_at", &Camera::use_look_at)
         .def("has_distortion_params", &Camera::has_distortion_params);
 
-    py::class_<DCamera>(m, "DCamera")
+    py::class_<DCamera>(m, "DCamera", py::module_local())
         .def(py::init<ptr<float>, // position
                       ptr<float>, // look
                       ptr<float>, // up
@@ -66,7 +62,7 @@ PYBIND11_MODULE(redner, m) {
                       ptr<float>, // cam_to_ndc
                       ptr<float>>()); // distortion_params
 
-    py::class_<Scene>(m, "Scene")
+    py::class_<Scene>(m, "Scene", py::module_local())
         .def(py::init<const Camera &,
                       const std::vector<const Shape*> &,
                       const std::vector<const Material*> &,
@@ -78,7 +74,7 @@ PYBIND11_MODULE(redner, m) {
         .def_readonly("max_generic_texture_dimension",
             &Scene::max_generic_texture_dimension);
 
-    py::class_<DScene, std::shared_ptr<DScene>>(m, "DScene")
+    py::class_<DScene, std::shared_ptr<DScene>>(m, "DScene", py::module_local())
         .def(py::init<const DCamera &,
                       const std::vector<DShape*> &,
                       const std::vector<DMaterial*> &,
@@ -88,7 +84,7 @@ PYBIND11_MODULE(redner, m) {
                       bool,
                       int>());
 
-    py::class_<Shape>(m, "Shape")
+    py::class_<Shape>(m, "Shape", py::module_local())
         .def(py::init<ptr<float>, // vertices
                       ptr<int>, // indices
                       ptr<float>, // uvs
@@ -110,34 +106,34 @@ PYBIND11_MODULE(redner, m) {
         .def("has_normals", &Shape::has_normals)
         .def("has_colors", &Shape::has_colors);
 
-    py::class_<DShape>(m, "DShape")
+    py::class_<DShape>(m, "DShape", py::module_local())
         .def(py::init<ptr<float>,
                       ptr<float>,
                       ptr<float>,
                       ptr<float>>());
 
-    py::class_<Texture1>(m, "Texture1")
+    py::class_<Texture1>(m, "Texture1", py::module_local())
         .def(py::init<const std::vector<ptr<float>> &,
                       const std::vector<int> &, // width
                       const std::vector<int> &, // height
                       int, // channels
                       ptr<float>>());
 
-    py::class_<Texture3>(m, "Texture3")
+    py::class_<Texture3>(m, "Texture3", py::module_local())
         .def(py::init<const std::vector<ptr<float>> &,
                       const std::vector<int> &, // width
                       const std::vector<int> &, // height
                       int, // channels
                       ptr<float>>());
 
-    py::class_<TextureN>(m, "TextureN")
+    py::class_<TextureN>(m, "TextureN", py::module_local())
         .def(py::init<const std::vector<ptr<float>> &,
                       const std::vector<int> &, // width
                       const std::vector<int> &, // height
                       int, // channels
                       ptr<float>>());
 
-    py::class_<Material>(m, "Material")
+    py::class_<Material>(m, "Material", py::module_local())
         .def(py::init<Texture3, // diffuse
                       Texture3, // specular
                       Texture1, // roughness
@@ -157,23 +153,23 @@ PYBIND11_MODULE(redner, m) {
         .def("get_normal_map_levels", &Material::get_normal_map_levels)
         .def("get_normal_map_size", &Material::get_normal_map_size);
 
-    py::class_<DMaterial>(m, "DMaterial")
+    py::class_<DMaterial>(m, "DMaterial", py::module_local())
         .def(py::init<Texture3, // diffuse
                       Texture3, // specular
                       Texture1, // roughness
                       TextureN, // generic_texture
                       Texture3>()); // normal_map
 
-    py::class_<AreaLight>(m, "AreaLight")
+    py::class_<AreaLight>(m, "AreaLight", py::module_local())
         .def(py::init<int, // shape_id
                       ptr<float>, // intensity
                       bool, // two_sided
                       bool>()); // directly_visible
 
-    py::class_<DAreaLight>(m, "DAreaLight")
+    py::class_<DAreaLight>(m, "DAreaLight", py::module_local())
         .def(py::init<ptr<float>>());
 
-    py::class_<EnvironmentMap, std::shared_ptr<EnvironmentMap>>(m, "EnvironmentMap")
+    py::class_<EnvironmentMap, std::shared_ptr<EnvironmentMap>>(m, "EnvironmentMap", py::module_local())
         .def(py::init<Texture3,   // values
                       ptr<float>, // env_to_world
                       ptr<float>, // world_to_env
@@ -183,22 +179,22 @@ PYBIND11_MODULE(redner, m) {
                       bool>()) // directly_visible
         .def("get_levels", &EnvironmentMap::get_levels)
         .def("get_size", &EnvironmentMap::get_size);
-    py::class_<DEnvironmentMap, std::shared_ptr<DEnvironmentMap>>(m, "DEnvironmentMap")
+    py::class_<DEnvironmentMap, std::shared_ptr<DEnvironmentMap>>(m, "DEnvironmentMap", py::module_local())
         .def(py::init<Texture3,       // values
                       ptr<float>>()); // world_to_env
 
-    py::class_<VonMisesFisherLight, std::shared_ptr<VonMisesFisherLight>>(m, "VonMisesFisherLight")
+    py::class_<VonMisesFisherLight, std::shared_ptr<VonMisesFisherLight>>(m, "VonMisesFisherLight", py::module_local())
         .def(py::init<Real,   // kappa
                       ptr<float>, // intensity_data
                       ptr<float>, // env_to_world
                       ptr<float>, // world_to_env
                       Real>());
-    py::class_<DVonMisesFisherLight, std::shared_ptr<DVonMisesFisherLight>>(m, "DVonMisesFisherLight")
+    py::class_<DVonMisesFisherLight, std::shared_ptr<DVonMisesFisherLight>>(m, "DVonMisesFisherLight", py::module_local())
         .def(py::init<ptr<float>,       // kappa
                       ptr<float>,       // intensity
                       ptr<float>>()); // world_to_env
 
-    py::enum_<Channels>(m, "channels")
+    py::enum_<Channels>(m, "channels", py::module_local())
         .value("radiance", Channels::radiance)
         .value("alpha", Channels::alpha)
         .value("depth", Channels::depth)
@@ -218,11 +214,11 @@ PYBIND11_MODULE(redner, m) {
 
     m.def("compute_num_channels", compute_num_channels, "");
 
-    py::enum_<SamplerType>(m, "SamplerType")
+    py::enum_<SamplerType>(m, "SamplerType", py::module_local())
         .value("independent", SamplerType::independent)
         .value("sobol", SamplerType::sobol);
 
-    py::class_<edge_sampling::RenderOptions>(m, "RenderOptions")
+    py::class_<edge_sampling::RenderOptions>(m, "RenderOptions", py::module_local())
         .def(py::init<uint64_t,
                       int, // num_samples
                       int, // max_bounces
@@ -235,14 +231,14 @@ PYBIND11_MODULE(redner, m) {
         .def_readwrite("seed", &edge_sampling::RenderOptions::seed)
         .def_readwrite("num_samples", &edge_sampling::RenderOptions::num_samples);
 
-    py::enum_<vfield::ImportanceSampling>(m, "ImportanceSamplingVField")
+    py::enum_<vfield::ImportanceSampling>(m, "ImportanceSamplingVField", py::module_local())
         .value("cosine_hemisphere", vfield::ImportanceSampling::cosine_hemisphere);
 
-    py::enum_<vfield::VarianceReduction>(m, "VarianceReductionVField")
+    py::enum_<vfield::VarianceReduction>(m, "VarianceReductionVField", py::module_local())
         .value("none", vfield::VarianceReduction::none)
         .value("antithetic_variate", vfield::VarianceReduction::antithetic_variate);
 
-    py::class_<vfield::VarianceReductionSettings>(m, "VarianceReductionSettings")
+    py::class_<vfield::VarianceReductionSettings>(m, "VarianceReductionSettings", py::module_local())
         .def(py::init<bool,
                       bool,
                       bool,
@@ -250,7 +246,7 @@ PYBIND11_MODULE(redner, m) {
                       bool,
                       int>());
 
-    py::class_<vfield::RenderOptions>(m, "RenderOptionsVField")
+    py::class_<vfield::RenderOptions>(m, "RenderOptionsVField", py::module_local())
         .def(py::init<uint64_t,
                       int,
                       int,
@@ -282,17 +278,18 @@ PYBIND11_MODULE(redner, m) {
                       bool,
                       Real>());
 
-    py::class_<Vector2i>(m, "Vector2i")
+        
+    py::class_<Vector2i>(m, "Vector2i", py::module_local())
         .def(py::init<int, int>())
         .def_readwrite("x", &Vector2i::x)
         .def_readwrite("y", &Vector2i::y);
 
-    py::class_<Vector2f>(m, "Vector2f")
+    py::class_<Vector2f>(m, "Vector2f", py::module_local())
         .def(py::init<float, float>())
         .def_readwrite("x", &Vector2f::x)
         .def_readwrite("y", &Vector2f::y);
 
-    py::class_<Vector3f>(m, "Vector3f")
+    py::class_<Vector3f>(m, "Vector3f", py::module_local())
         .def(py::init<float, float, float>())
         .def_readwrite("x", &Vector3f::x)
         .def_readwrite("y", &Vector3f::y)
@@ -321,7 +318,7 @@ PYBIND11_MODULE(redner, m) {
                  }
             )
         .def("identity", &Matrix4x4::identity);
-    py::class_<MitsubaTriMesh>(m, "MitsubaTriMesh")
+    py::class_<MitsubaTriMesh>(m, "MitsubaTriMesh", py::module_local())
         .def_readwrite("vertices", &MitsubaTriMesh::vertices)
         .def_readwrite("indices", &MitsubaTriMesh::indices)
         .def_readwrite("uvs", &MitsubaTriMesh::uvs)
@@ -330,7 +327,7 @@ PYBIND11_MODULE(redner, m) {
     m.def("load_serialized", &load_serialized, "");
 
     // For auto uv unwrapping
-    py::class_<UVTriMesh>(m, "UVTriMesh")
+    py::class_<UVTriMesh>(m, "UVTriMesh", py::module_local())
         .def(py::init<ptr<float>, // vertices
                       ptr<int>, // indices
                       ptr<float>, // uvs
@@ -341,7 +338,7 @@ PYBIND11_MODULE(redner, m) {
         .def_readwrite("uvs", &UVTriMesh::uvs)
         .def_readwrite("uv_indices", &UVTriMesh::uv_indices)
         .def_readwrite("num_uv_vertices", &UVTriMesh::num_uv_vertices);
-    py::class_<TextureAtlas>(m, "TextureAtlas")
+    py::class_<TextureAtlas>(m, "TextureAtlas", py::module_local())
         .def(py::init<>());
     m.def("automatic_uv_map", &automatic_uv_map, "");
     m.def("copy_texture_atlas", &copy_texture_atlas, "");
