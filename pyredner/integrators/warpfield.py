@@ -22,7 +22,9 @@ class KernelParameters:
         rrEnable = False,
         rrGeometricP = 0.4,
         batchSize = 4,
-        isBasicNormal = False):
+        isBasicNormal = False,
+        use_new_dist = False,
+        sigma = 0.006):
 
         self.vMFConcentration = vMFConcentration
         self.auxPrimaryGaussianStddev = auxPrimaryGaussianStddev
@@ -36,6 +38,8 @@ class KernelParameters:
         self.rrGeometricP = rrGeometricP
         self.batchSize = batchSize
         self.isBasicNormal = isBasicNormal
+        self.use_new_dist = use_new_dist
+        self.sigma = sigma
     
     def as_redner_object(self):
         return redner.KernelParameters(
@@ -50,7 +54,9 @@ class KernelParameters:
             self.rrEnable,
             self.rrGeometricP,
             self.batchSize,
-            self.isBasicNormal)
+            self.isBasicNormal,
+            self.use_new_dist,
+            self.sigma)
 
 
 class VarianceReductionSettings:

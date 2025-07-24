@@ -266,7 +266,7 @@ PYBIND11_MODULE(redner, m) {
         .def_readwrite("seed", &vfield::RenderOptions::seed)
         .def_readwrite("num_samples", &vfield::RenderOptions::num_samples);
 
-    py::class_<KernelParameters>(m, "KernelParameters")
+    py::class_<KernelParameters>(m, "KernelParameters", py::module_local())
         .def(py::init<Real,
                       Real,
                       Real,
@@ -278,7 +278,9 @@ PYBIND11_MODULE(redner, m) {
                       bool,
                       Real,
                       int,
-                      bool>());
+                      bool,
+                      bool,
+                      Real>());
 
     py::class_<Vector2i>(m, "Vector2i")
         .def(py::init<int, int>())

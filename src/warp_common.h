@@ -50,6 +50,14 @@ struct TKernelParameters {
     // If this flag is true, use a simple gaussian kernel.
     bool isBasicNormal;
 
+    // Use new distance function from "Warped-Area Reparameterization of 
+    // Differential Path Integrals" by Xu et al. Parameter sigma is user-defined. 
+    // Parameter a is implicitly set to 3.
+    bool use_new_dist;
+
+    // Sigma value
+    T sigma;
+
     TKernelParameters(
         T vMFConcentration,
         T auxPrimaryGaussianStddev,
@@ -62,7 +70,9 @@ struct TKernelParameters {
         bool rr_enabled,
         T rr_geometric_p,
         int batch_size,
-        bool isBasicNormal) : vMFConcentration(vMFConcentration),
+        bool isBasicNormal,
+        bool use_new_dist,
+        T sigma) : vMFConcentration(vMFConcentration),
                             auxPrimaryGaussianStddev(auxPrimaryGaussianStddev),
                             auxPdfEpsilonRegularizer(auxPdfEpsilonRegularizer),
                             asymptoteInvGaussSigma(asymptoteInvGaussSigma),
@@ -73,7 +83,9 @@ struct TKernelParameters {
                             rr_enabled(rr_enabled),
                             rr_geometric_p(rr_geometric_p),
                             batch_size(batch_size),
-                            isBasicNormal(isBasicNormal) { }
+                            isBasicNormal(isBasicNormal),
+                            use_new_dist(use_new_dist),
+                            sigma(sigma) { }
 };
 
 template <typename T>
@@ -266,16 +278,30 @@ Real warp_weight(const KernelParameters& kernel_parameters,
                  aux_point,
                  shading_point,
                  horizon_term);
-    
-    const auto gamma = kernel_parameters.asymptoteGamma;
-    const auto k = kernel_parameters.vMFConcentration / gamma;
-    auto gauss = exp(k * (dot(primary.dir, auxiliary.dir) - 1));
 
-    // Compute the harmonic weight.
-    auto harmonic = pow(gauss, gamma) / pow(1 - gauss * boundary_term, gamma);
+    if (kernel_parameters.use_new_dist) {
+        auto unit_prim = primary.dir;
+        auto unit_aux = auxiliary.dir;
+        auto dist = length_squared((unit_prim - unit_aux));
 
-    assert(harmonic >= 0.f);
-    return harmonic;
+        auto D = (1.0 / kernel_parameters.sigma) * (1.0 - exp(-dist / kernel_parameters.sigma));
+        auto w = 1.0 / ((pow(D, 3) + (1 - boundary_term)));
+
+        assert(w >= 0.f);
+        return w;
+    }
+    else {
+        const auto gamma = kernel_parameters.asymptoteGamma;
+        const auto k = kernel_parameters.vMFConcentration / gamma;
+        auto gauss = exp(k * (dot(primary.dir, auxiliary.dir) - 1));
+
+        // Compute the harmonic weight.
+        auto tmp = min(1.0 - 1e-6, gauss * boundary_term);
+        auto harmonic = pow(gauss, gamma) / pow(1 - tmp, gamma);
+
+        assert(harmonic >= 0.f);
+        return harmonic;
+    }
 }
 
 /*
@@ -364,25 +390,40 @@ Vector3 warp_weight_grad(
                  shading_point,
                  horizon_term);
 
-    // Compute the inverse gaussian term.
-    //auto inv_gauss = exp(square(1 - dot(primary.dir, auxiliary.dir)) / asymptoteInvGaussSigma);
-    const auto gamma = kernel_parameters.asymptoteGamma;
-    const auto k = kernel_parameters.vMFConcentration / gamma;
 
-    //auto gauss = exp(-square(1 - dot(primary.dir, auxiliary.dir)) / kernel_parameters.asymptoteInvGaussSigma);
-    auto gauss = exp(k * (dot(primary.dir, auxiliary.dir) - 1));
+    if (kernel_parameters.use_new_dist) {
+        auto unit_prim = primary.dir;
+        auto unit_aux = auxiliary.dir;
+        auto dist = length_squared((unit_prim - unit_aux));
+        auto exponent = exp(-dist / kernel_parameters.sigma);
+        auto D = (1.0 / kernel_parameters.sigma) * (1.0 - exp(-dist / kernel_parameters.sigma));
+        //  w = 1.0 / ((pow(D, 3) + (1 - boundary_term)));
+        auto dwdD = -(3.0 * pow(D, 2) / pow((pow(D, 3) + (1 - boundary_term)), 2));
+        auto dDddist = (1.0 / (kernel_parameters.sigma * kernel_parameters.sigma)) * exp(-dist / kernel_parameters.sigma);
+        Vector3 dw = -2 * dwdD * dDddist * (unit_aux - unit_prim * dot(unit_aux, unit_prim));
+        return dw;
+    }
+    else {
+        // Compute the inverse gaussian term.
+        //auto inv_gauss = exp(square(1 - dot(primary.dir, auxiliary.dir)) / asymptoteInvGaussSigma);
+        const auto gamma = kernel_parameters.asymptoteGamma;
+        const auto k = kernel_parameters.vMFConcentration / gamma;
 
-    // Gradient of inverse gaussian.
-    auto inv_gauss_grad = exp(k * (1 - dot(primary.dir, auxiliary.dir))) * k * cross(primary.dir,cross(primary.dir, auxiliary.dir));
+        //auto gauss = exp(-square(1 - dot(primary.dir, auxiliary.dir)) / kernel_parameters.asymptoteInvGaussSigma);
+        auto gauss = exp(k * (dot(primary.dir, auxiliary.dir) - 1));
 
-    // Compute the harmonic weight.
-    auto harmonic = -gamma * pow(gauss, gamma + 1) / pow(1 - boundary_term * gauss, gamma + 1);
+        // Gradient of inverse gaussian.
+        auto inv_gauss_grad = exp(k * (1 - dot(primary.dir, auxiliary.dir))) * k * cross(primary.dir,cross(primary.dir, auxiliary.dir));
 
-    // Compute the gradient of the harmonic weight w.r.t 'wo'.
-    auto harmonic_gradient = harmonic * inv_gauss_grad;
+        // Compute the harmonic weight.
+        auto harmonic = -gamma * pow(gauss, gamma + 1) / pow(1 - boundary_term * gauss, gamma + 1);
 
-    // (Note that this is a vector quantity)
-    return harmonic_gradient;
+        // Compute the gradient of the harmonic weight w.r.t 'wo'.
+        auto harmonic_gradient = harmonic * inv_gauss_grad;
+
+        // (Note that this is a vector quantity)
+        return harmonic_gradient;        
+    }
 }
 
 
