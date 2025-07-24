@@ -59,7 +59,7 @@ def compute_vertex_normal(vertices: torch.Tensor,
             side_a = e1 / torch.reshape(e1_len, [-1, 1])
             side_b = e2 / torch.reshape(e2_len, [-1, 1])
             if i == 0:
-                n = torch.cross(side_a, side_b)
+                n = torch.cross(side_a, side_b, dim = 1)
                 n = torch.where(length(n).reshape(-1, 1).expand(-1, 3) > 0,
                     n / torch.reshape(length(n), [-1, 1]),
                     torch.zeros(n.shape, dtype=n.dtype, device=n.device))
@@ -100,7 +100,7 @@ def compute_vertex_normal(vertices: torch.Tensor,
             side_a = e1 / torch.reshape(e1_len, [-1, 1])
             side_b = e2 / torch.reshape(e2_len, [-1, 1])
             if i == 0:
-                n = torch.cross(side_a, side_b)
+                n = torch.cross(side_a, side_b, dim = 1)
                 n = torch.where(length(n).reshape(-1, 1).expand(-1, 3) > 0,
                     n / torch.reshape(length(n), [-1, 1]),
                     torch.zeros(n.shape, dtype=n.dtype, device=n.device))
