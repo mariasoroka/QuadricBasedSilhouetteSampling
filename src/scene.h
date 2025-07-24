@@ -127,7 +127,8 @@ void intersect(const Scene &scene,
                BufferView<SurfacePoint> surface_points,
                BufferView<RayDifferential> new_ray_differentials,
                BufferView<OptiXRay> optix_rays,
-               BufferView<OptiXHit> optix_hits);
+               BufferView<OptiXHit> optix_hits,
+               bool finalize = false);
 // Set ray.tmax to negative if occluded
 void occluded(const Scene &scene,
               const BufferView<int> &active_pixels,

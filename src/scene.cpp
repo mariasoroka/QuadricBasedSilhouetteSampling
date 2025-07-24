@@ -560,7 +560,8 @@ void intersect(const Scene &scene,
                BufferView<SurfacePoint> points,
                BufferView<RayDifferential> new_ray_differentials,
                BufferView<OptiXRay> optix_rays,
-               BufferView<OptiXHit> optix_hits) {
+               BufferView<OptiXHit> optix_hits,
+               bool finalize) {
     if (active_pixels.size() == 0) {
         return;
     }
@@ -568,6 +569,8 @@ void intersect(const Scene &scene,
 #ifdef __NVCC__
         // OptiX prime query
         // Convert the rays to OptiX format
+        std::cout << "Surface point update based on provided intersection is not implemented for GPU" << std::endl;
+        assert (false);
         to_optix_ray(active_pixels, rays,
                      optix_rays);
         optix::prime::Query query =
@@ -605,6 +608,13 @@ void intersect(const Scene &scene,
                 auto id = work_id;
                 auto pixel_id = active_pixels[id];
                 Ray &ray = rays[pixel_id];
+
+                // keep intersection information
+                auto old_shape_id = intersections[pixel_id].shape_id;
+                auto old_tri_id = intersections[pixel_id].tri_id;
+                auto old_tmax = distance(points[pixel_id].position, ray.org) / length(ray.dir);
+                auto old_point = points[pixel_id].position;
+                
                 RTCIntersectContext rtc_context;
                 rtcInitIntersectContext(&rtc_context);
                 RTCRayHit rtc_ray_hit;
@@ -646,6 +656,45 @@ void intersect(const Scene &scene,
                                         ray_differential,
                                         new_ray_differentials[pixel_id]);
                     ray.tmax = rtc_ray_hit.ray.tfar;
+                }
+                // if the shape_id was preset, finalize the intersection.
+                if (finalize && old_shape_id != -1) {
+                    //  If there is no occlusion and the ray hit some geometry reset shape_id, tri_id etc
+                    if (ray.tmax >= old_tmax * (1.0 - 1e-5) || intersections[pixel_id].shape_id == -2) {
+                        int shape_id = old_shape_id;
+                        int tri_id = old_tri_id;
+                        const auto &shape = scene.shapes[shape_id];
+                        const auto &ray_differential = ray_differentials[pixel_id];
+
+                        intersections[pixel_id] = Intersection{shape_id, tri_id};
+                        points[pixel_id] = 
+                            finalize_intersection(shape, 
+                                                tri_id, 
+                                                ray, 
+                                                ray_differential,
+                                                new_ray_differentials[pixel_id],
+                                                old_point);
+                        ray.tmax = old_tmax;
+
+                        Real dot_prod = dot(points[pixel_id].shading_frame.n, ray.dir) / length(ray.dir);
+                        // Make sure that the shading frame normal is orthogonal to the ray direction
+                        if (dot_prod > - 1e-14) {
+                            Vector3 new_shading_n = normalize(points[pixel_id].shading_frame.n - (dot_prod + 1e-14) * ray.dir / length(ray.dir));
+                            Vector3 frame_x = points[pixel_id].shading_frame.x;
+                            Vector3 frame_y = cross(new_shading_n, frame_x);
+                            if (length_squared(frame_y) > 0) {
+                                frame_y = normalize(frame_y);
+                                frame_x = cross(frame_y, new_shading_n);
+                            } else {
+                                coordinate_system(new_shading_n, frame_x, frame_y);
+                            }
+                            points[pixel_id].shading_frame =  Frame(frame_x, frame_y, new_shading_n);
+                        }
+                    }
+                    else {
+                        intersections[pixel_id] = Intersection{-1, -1};
+                    }
+                    
                 }
             }
         }, num_threads);

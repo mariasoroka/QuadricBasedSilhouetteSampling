@@ -296,3 +296,81 @@ inline void d_intersect(const TVector3<T> &v0,
     d_v1 += d_e1;
     d_v0 -= d_e1;
 }
+
+template <typename T>
+DEVICE
+inline TVector3<T> finalize_intersection(const TVector3<T> &v0,
+                             const TVector3<T> &v1,
+                             const TVector3<T> &v2,
+                             const TRay<T> &ray,
+                             const TRayDifferential<T> &ray_differential,
+                             TVector2<T> &u_dxy,
+                             TVector2<T> &v_dxy,
+                             TVector2<T> &t_dxy,
+                             const TVector3<T> &point) {
+    auto e1 = v1 - v0;
+    auto e2 = v2 - v0;
+    auto pvec = cross(ray.dir, e2);
+    auto pvec_dx = cross(ray_differential.dir_dx, e2);
+    auto pvec_dy = cross(ray_differential.dir_dy, e2);
+    auto divisor = dot(pvec, e1);
+    auto divisor_dx = dot(pvec_dx, e1);
+    auto divisor_dy = dot(pvec_dy, e1);
+    if (fabs(divisor) < Real(1e-8f)) {
+        // XXX HACK!!! XXX
+        if (divisor > 0) {
+            divisor = 1e-8f;
+        } else {
+            divisor = -1e-8f;
+        }
+    }
+    auto s = ray.org - v0;
+    auto s_dx = ray_differential.org_dx;
+    auto s_dy = ray_differential.org_dy;
+    auto dot_s_pvec = dot(s, pvec);
+    auto dot_s_pvec_dx = dot(s_dx, pvec) + dot(s, pvec_dx);
+    auto dot_s_pvec_dy = dot(s_dy, pvec) + dot(s, pvec_dy);
+    auto u = dot_s_pvec / divisor;
+    auto u_dx = (dot_s_pvec_dx * divisor - dot_s_pvec * divisor_dx) / square(divisor);
+    auto u_dy = (dot_s_pvec_dy * divisor - dot_s_pvec * divisor_dy) / square(divisor);
+    auto qvec = cross(s, e1);
+    auto qvec_dx = cross(s_dx, e1);
+    auto qvec_dy = cross(s_dy, e1);
+    auto dot_dir_qvec = dot(ray.dir, qvec);
+    auto dot_dir_qvec_dx = dot(ray_differential.dir_dx, qvec) + dot(ray.dir, qvec_dx);
+    auto dot_dir_qvec_dy = dot(ray_differential.dir_dy, qvec) + dot(ray.dir, qvec_dy);
+    auto v = dot_dir_qvec / divisor;
+    auto v_dx = (dot_dir_qvec_dx * divisor - dot_dir_qvec * divisor_dx) / square(divisor);
+    auto v_dy = (dot_dir_qvec_dy * divisor - dot_dir_qvec * divisor_dy) / square(divisor);
+    auto dot_e2_qvec = dot(e2, qvec);
+    auto dot_e2_qvec_dx = dot(e2, qvec_dx);
+    auto dot_e2_qvec_dy = dot(e2, qvec_dy);
+    // auto t = dot_e2_qvec / divisor;
+    auto t = length(point - ray.org) / length(ray.dir);
+    auto t_dx = (dot_e2_qvec_dx * divisor - dot_e2_qvec * divisor_dx) / square(divisor);
+    auto t_dy = (dot_e2_qvec_dy * divisor - dot_e2_qvec * divisor_dy) / square(divisor);
+    u_dxy = Vector2{u_dx, u_dy};
+    v_dxy = Vector2{v_dx, v_dy};
+    t_dxy = Vector2{t_dx, t_dy};
+    return TVector3<T>{u, v, t};
+}
+
+// template <typename T>
+// DEVICE
+// inline void d_finalize_intersection(const TVector3<T> &v0,
+//                         const TVector3<T> &v1,
+//                         const TVector3<T> &v2,
+//                         const TRay<T> &ray,
+//                         const TRayDifferential<T> &ray_differential,
+//                         const TVector3<T> &d_uvt,
+//                         const TVector2<T> &d_u_dxy,
+//                         const TVector2<T> &d_v_dxy,
+//                         const TVector2<T> &d_t_dxy,
+//                         TVector3<T> &d_v0,
+//                         TVector3<T> &d_v1,
+//                         TVector3<T> &d_v2,
+//                         DTRay<T> &d_ray,
+//                         TRayDifferential<T> &d_ray_differential,
+//                         TVector3<T> &point) {
+// Intersections that should be finalized do not need to be differentiated.
+// }

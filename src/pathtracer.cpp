@@ -590,8 +590,9 @@ namespace edge_sampling {
                             edge_rays,
                             edge_ray_differentials,
                             edge_throughputs,
-                            edge_min_roughness);
-
+                            edge_min_roughness,
+                            edge_shading_isects,
+                            edge_shading_points);
                         // Now we path trace these edges
                         auto edge_active_pixels = path_buffer.edge_active_pixels.view(0, num_edge_samples);
                         init_active_pixels(edge_rays, edge_active_pixels, scene.use_gpu, thrust_alloc);
@@ -604,7 +605,8 @@ namespace edge_sampling {
                                 edge_shading_points,
                                 edge_ray_differentials,
                                 optix_rays,
-                                optix_hits);
+                                optix_hits,
+                                true);
                         // Update edge throughputs: take geometry terms and Jacobians into account
                         update_secondary_edge_weights(scene,
                                                     active_pixels,
@@ -877,7 +879,9 @@ namespace edge_sampling {
                                         rays,
                                         ray_differentials,
                                         throughputs,
-                                        channel_multipliers);
+                                        channel_multipliers,
+                                        shading_isects,
+                                        shading_points);
                     // Initialize pixel id
                     init_active_pixels(rays, active_pixels, scene.use_gpu, thrust_alloc);
 
@@ -890,7 +894,8 @@ namespace edge_sampling {
                             shading_points,
                             ray_differentials,
                             optix_rays,
-                            optix_hits);
+                            optix_hits,
+                            true);
                     update_primary_edge_weights(scene,
                                                 edge_records,
                                                 shading_isects,

@@ -382,6 +382,133 @@ inline SurfacePoint intersect_shape(const Shape &shape,
 }
 
 DEVICE
+inline SurfacePoint finalize_intersection(const Shape &shape,
+                                    int index,
+                                    const Ray &ray,
+                                    const RayDifferential &ray_differential,
+                                    RayDifferential &new_ray_differential,
+                                    const Vector3 &position) {
+    auto ind = get_indices(shape, index);
+    auto v0 = Vector3{get_vertex(shape, ind[0])};
+    auto v1 = Vector3{get_vertex(shape, ind[1])};
+    auto v2 = Vector3{get_vertex(shape, ind[2])};
+    auto uv_ind = ind;
+    if (shape.uv_indices != nullptr) {
+        uv_ind = get_uv_indices(shape, index);
+    }
+    auto normal_ind = ind;
+    if (shape.normal_indices != nullptr) {
+        normal_ind = get_normal_indices(shape, index);
+    }
+    Vector2 uvs0, uvs1, uvs2;
+    if (has_uvs(shape)) {
+        uvs0 = get_uv(shape, uv_ind[0]);
+        uvs1 = get_uv(shape, uv_ind[1]);
+        uvs2 = get_uv(shape, uv_ind[2]);
+    } else {
+        uvs0 = Vector2{0.f, 0.f};
+        uvs1 = Vector2{1.f, 0.f};
+        uvs2 = Vector2{1.f, 1.f};
+    }
+    auto u_dxy = Vector2{0, 0};
+    auto v_dxy = Vector2{0, 0};
+    auto t_dxy = Vector2{0, 0};
+    auto uvt = finalize_intersection(v0, v1, v2, ray, ray_differential, u_dxy, v_dxy, t_dxy, position);
+    auto u = uvt[0];
+    auto v = uvt[1];
+    auto w = 1.f - (u + v);
+    auto t = uvt[2];
+    auto uv = w * uvs0 + u * uvs1 + v * uvs2;
+    auto hit_pos = position;
+    auto geom_normal = normalize(cross(v1 - v0, v2 - v0));
+
+    // Compute triangle derivatives (for shading frame)
+    auto uvs02 = uvs0 - uvs2;
+    auto uvs12 = uvs1 - uvs2;
+    auto uv_det = uvs02[0] * uvs12[1] - uvs02[1] * uvs12[0];
+    auto dpdu = Vector3{0, 0, 0};
+    auto dpdv = Vector3{0, 0, 0};
+    if (uv_det == 0) {
+        coordinate_system(geom_normal, dpdu, dpdv);
+    } else {
+        auto inv_det = 1 / uv_det;
+        auto v02 = v0 - v2;
+        auto v12 = v1 - v2;
+        dpdu = ( uvs12[1] * v02 - uvs02[1] * v12) * inv_det;
+        dpdv = (-uvs12[0] * v02 + uvs02[0] * v12) * inv_det;
+    }
+
+    // Surface derivative for ray differentials
+    auto du_dxy = (- u_dxy - v_dxy) * uvs0[0] + u_dxy * uvs1[0] + v_dxy * uvs2[0];
+    auto dv_dxy = (- u_dxy - v_dxy) * uvs0[1] + u_dxy * uvs1[1] + v_dxy * uvs2[1];
+    auto dpdx = ray_differential.org_dx + ray.dir * t_dxy.x + ray_differential.dir_dx * t;
+    auto dpdy = ray_differential.org_dy + ray.dir * t_dxy.y + ray_differential.dir_dy * t;
+    auto shading_normal = geom_normal;
+    auto dn_dx = Vector3{0, 0, 0};
+    auto dn_dy = Vector3{0, 0, 0};
+    if (has_shading_normals(shape)) {
+        auto n0 = get_shading_normal(shape, normal_ind[0]);
+        auto n1 = get_shading_normal(shape, normal_ind[1]);
+        auto n2 = get_shading_normal(shape, normal_ind[2]);
+
+        auto nn = w * n0 + u * n1 + v * n2;
+
+        // Compute dndx & dndy
+        auto dnn_dx = (- u_dxy.x - v_dxy.x) * n0 + u_dxy.x * n1 + v_dxy.x * n2;
+        auto dnn_dy = (- u_dxy.y - v_dxy.y) * n0 + u_dxy.y * n1 + v_dxy.y * n2;
+        // normalization derivatives
+        auto nn_len_sq = dot(nn, nn);
+        auto nn_len = sqrt(nn_len_sq);
+        dn_dx = (nn_len_sq * dnn_dx - dot(nn, dnn_dx) * nn) / (nn_len_sq * nn_len);
+        dn_dy = (nn_len_sq * dnn_dy - dot(nn, dnn_dy) * nn) / (nn_len_sq * nn_len);
+
+        // Shading normal computation
+        shading_normal = normalize(nn);
+        // Flip geometric normal to the same side of shading normal
+        if (dot(geom_normal, shading_normal) < 0.f) {
+            geom_normal = -geom_normal;
+        }
+    }
+
+    auto frame_x = normalize(dpdu);
+    auto frame_y = cross(shading_normal, frame_x);
+    if (length_squared(frame_y) > 0) {
+        frame_y = normalize(frame_y);
+        frame_x = cross(frame_y, shading_normal);
+    } else {
+        coordinate_system(shading_normal, frame_x, frame_y);
+    }
+    auto frame = Frame(frame_x, frame_y, shading_normal);
+
+    // Update ray differential
+    new_ray_differential.org_dx = dpdx;
+    new_ray_differential.org_dy = dpdy;
+    new_ray_differential.dir_dx = ray_differential.dir_dx;
+    new_ray_differential.dir_dy = ray_differential.dir_dy;
+
+    // Interpolate color
+    auto cc = Vector3{0, 0, 0};
+    if (has_colors(shape)) {
+        auto c0 = get_color(shape, ind[0]);
+        auto c1 = get_color(shape, ind[1]);
+        auto c2 = get_color(shape, ind[2]);
+        cc = w * c0 + u * c1 + v * c2;
+    }
+
+    return SurfacePoint{hit_pos,
+                        geom_normal,
+                        frame,
+                        dpdu,
+                        uv,
+                        du_dxy,
+                        dv_dxy,
+                        dn_dx,
+                        dn_dy,
+                        cc,
+                        Vector2{u, v}};
+}
+
+DEVICE
 inline void d_intersect_shape(
         const Shape &shape,
         int index,

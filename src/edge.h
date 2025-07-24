@@ -251,7 +251,9 @@ void sample_primary_edges(const Scene &scene,
                           BufferView<Ray> rays,
                           BufferView<RayDifferential> primary_ray_differentials,
                           BufferView<Vector3> throughputs,
-                          BufferView<Real> channel_multipliers);
+                          BufferView<Real> channel_multipliers,
+                          BufferView<Intersection> &shading_isects,
+                          BufferView<SurfacePoint> &shading_points);
 
 void update_primary_edge_weights(const Scene &scene,
                                  const BufferView<PrimaryEdgeRecord> &edge_records,
@@ -287,7 +289,9 @@ void sample_secondary_edges(const Scene &scene,
                             BufferView<Ray> rays,
                             BufferView<RayDifferential> &bsdf_ray_differentials,
                             BufferView<Vector3> new_throughputs,
-                            BufferView<Real> edge_min_roughness);
+                            BufferView<Real> edge_min_roughness,
+                            BufferView<Intersection> &edge_shading_isects,
+                            BufferView<SurfacePoint> &edge_shading_points);
 
 void update_secondary_edge_weights(const Scene &scene,
                                    const BufferView<int> &active_pixels,

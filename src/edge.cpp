@@ -437,14 +437,32 @@ struct primary_edge_sampler {
 
             // Generate two rays at the two sides of the edge
             auto half_space_normal = get_normal(normalize(v0_ss - v1_ss));
-            // The half space normal always points to the upper half-space.
-            auto offset = 1e-6f;
-            auto upper_pt = edge_pt + half_space_normal * offset;
-            auto upper_ray = sample_primary(camera, upper_pt);
-            auto lower_pt = edge_pt - half_space_normal * offset;
-            auto lower_ray = sample_primary(camera, lower_pt);
-            rays[2 * idx + 0] = upper_ray;
-            rays[2 * idx + 1] = lower_ray;
+            // Sample a primary ray through the sampled point on the edge
+            auto ray_tmp = sample_primary(camera, edge_pt);
+            // Compute the corresponding intersection point on the edge
+            // For that solve for alpha and t s.t. v0 + alpha*(v1 - v0) = ray_tmp.org + t*ray_tmp.dir
+            Real a1 = dot(ray_tmp.dir, v0 - ray_tmp.org);
+            Real a2 = dot(v0 - ray_tmp.org, v0 - v1);
+            Real b1 = length_squared(ray_tmp.dir);
+            Real b2 = dot(v0 - v1, ray_tmp.dir);
+            Real b4 = length_squared(v0 - v1);
+            Real det = b1 * b4 - b2 * b2;
+            Real alpha = (-b2 * a1 + b1 * a2) / det;
+            auto on_edge_pt = v0 + alpha * (v1 - v0);
+
+            // Set the two rays. One of them starts at the edge point, and the second one is ray_tmp
+            rays[2 * idx + 0] = Ray(on_edge_pt, ray_tmp.dir);
+            rays[2 * idx + 1] = ray_tmp;
+            
+            // It is unknown which face the first ray will intersect
+            shading_isects[2 * idx + 0] = -1;
+            // The second ray will intersect the triangle plane adjacent to the sampled edge
+            int face_idx = dot(get_normal(scene.shapes[edge.shape_id], edge.f0), ray_tmp.dir) < 0 ? edge.f0 : edge.f1;
+            shading_isects[2 * idx + 1] = Intersection(edge.shape_id, face_idx);
+            shading_points[2 * idx + 1].position = on_edge_pt;
+
+            Vector3 normal = cross(v0 - v1, ray_tmp.dir);
+            Vector3 other_vert = get_non_shared_v0(shapes, edge);
 
             // Compute the corresponding backprop derivatives
             auto xi = clamp(int(edge_pt[0] * camera.width - camera.viewport_beg.x),
@@ -532,8 +550,15 @@ struct primary_edge_sampler {
             assert(isfinite(d_color));
             assert(isfinite(upper_weight));
 
-            throughputs[2 * idx + 0] = upper_weight;
-            throughputs[2 * idx + 1] = lower_weight;
+            // Make sure that throughputs are assigned correctly
+            if (dot(normal, other_vert - v0) < 0) {
+                throughputs[2 * idx + 1] = upper_weight;
+                throughputs[2 * idx + 0] = lower_weight;
+            }
+            else {
+                throughputs[2 * idx + 0] = upper_weight;
+                throughputs[2 * idx + 1] = lower_weight;
+            }
 
             for (int d = 0; d < nd; d++) {
                 auto viewport_width = camera.viewport_end.x - camera.viewport_beg.x;
@@ -673,6 +698,7 @@ struct primary_edge_sampler {
         primary_ray_differentials[idx] = RayDifferential{org_dx, org_dy, dir_dx, dir_dy};
     }
 
+    const FlattenScene scene;
     const Camera camera;
     const Shape *shapes;
     const Edge *edges;
@@ -687,6 +713,8 @@ struct primary_edge_sampler {
     RayDifferential *primary_ray_differentials;
     Vector3 *throughputs;
     Real *channel_multipliers;
+    Intersection *shading_isects;
+    SurfacePoint *shading_points;
 };
 
 void sample_primary_edges(const Scene &scene,
@@ -697,8 +725,11 @@ void sample_primary_edges(const Scene &scene,
                           BufferView<Ray> rays,
                           BufferView<RayDifferential> primary_ray_differentials,
                           BufferView<Vector3> throughputs,
-                          BufferView<Real> channel_multipliers) {
+                          BufferView<Real> channel_multipliers,
+                          BufferView<Intersection> &shading_isects,
+                          BufferView<SurfacePoint> &shading_points) {
     parallel_for(primary_edge_sampler{
+        get_flatten_scene(scene),
         scene.camera,
         scene.shapes.data,
         scene.edge_sampler.edges.begin(),
@@ -712,7 +743,9 @@ void sample_primary_edges(const Scene &scene,
         rays.begin(),
         primary_ray_differentials.begin(),
         throughputs.begin(),
-        channel_multipliers.begin()
+        channel_multipliers.begin(),
+        shading_isects.begin(),
+        shading_points.begin()
     }, samples.size(), scene.use_gpu);
 }
 
@@ -728,7 +761,10 @@ struct primary_edge_weights_updater {
             (isect_upper.tri_id == edge_record.edge.f0 || isect_upper.tri_id == edge_record.edge.f1);
         bool lower_connected = isect_lower.shape_id == edge_record.edge.shape_id &&
             (isect_lower.tri_id == edge_record.edge.f0 || isect_lower.tri_id == edge_record.edge.f1);
-        if (!upper_connected && !lower_connected) {
+        // Check that both intersections are valid
+        bool valid_upper = isect_upper.valid() || (isect_upper.infinity() && scene.envmap != nullptr);
+        bool valid_lower = isect_lower.valid() || (isect_lower.infinity() && scene.envmap != nullptr);
+        if ((!upper_connected && !lower_connected) || !valid_upper || !valid_lower) {
             throughputs_upper = Vector3{0, 0, 0};
             throughputs_lower = Vector3{0, 0, 0};
             auto nd = channel_info.num_total_dimensions;
@@ -738,7 +774,7 @@ struct primary_edge_weights_updater {
             }
         }
     }
-
+    const FlattenScene scene;
     const PrimaryEdgeRecord *edge_records;
     const Intersection *shading_isects;
     const ChannelInfo channel_info;
@@ -753,13 +789,15 @@ void update_primary_edge_weights(const Scene &scene,
                                  BufferView<Vector3> throughputs,
                                  BufferView<Real> channel_multipliers) {
     // XXX: Disable this at the moment. Not sure if this is more robust or not.
-    // parallel_for(primary_edge_weights_updater{
-    //     edge_records.begin(),
-    //     edge_isects.begin(),
-    //     channel_info,
-    //     throughputs.begin(),
-    //     channel_multipliers.begin()
-    // }, edge_records.size(), scene.use_gpu);
+    // Removing invalid intersections
+    parallel_for(primary_edge_weights_updater{
+        get_flatten_scene(scene),
+        edge_records.begin(),
+        edge_isects.begin(),
+        channel_info,
+        throughputs.begin(),
+        channel_multipliers.begin()
+    }, edge_records.size(), scene.use_gpu);
 }
 
 struct primary_edge_derivatives_computer {
@@ -1932,8 +1970,9 @@ struct secondary_edge_sampler {
         edge_records[idx].mwt = mwt; // for Jacobian computation
         edge_records[idx].use_nee_ray = use_nee_ray;
         edge_records[idx].is_diffuse_or_glossy = is_diffuse_or_glossy;
-        rays[2 * idx + 0] = Ray(shading_point.position, v_upper_dir, 1e-3f * length(sample_p));
-        rays[2 * idx + 1] = Ray(shading_point.position, v_lower_dir, 1e-3f * length(sample_p));
+        // Set the two rays. The first one starts at the edge. The second ray points to the edge.
+        rays[2 * idx + 0] = Ray(shading_point.position + sample_p, sample_dir);
+        rays[2 * idx + 1] = Ray(shading_point.position, sample_dir);
         const auto &incoming_ray_differential = incoming_ray_differentials[pixel_id];
         // Propagate ray differentials
         auto bsdf_ray_differential = RayDifferential{};
@@ -1973,8 +2012,19 @@ struct secondary_edge_sampler {
         // assert(isfinite(eval_bsdf));
         // assert(isfinite(d_color));
         assert(isfinite(edge_weight));
+        // Make sure that signs of the contributions are correct
+        auto test_vertex = get_non_shared_v0(scene.shapes, edge);
+        if (dot(test_vertex - shading_point.position, half_plane_normal) > 0) {
+            nt = -nt;
+        }
         new_throughputs[2 * idx + 0] = nt;
         new_throughputs[2 * idx + 1] = -nt;
+        // The first intersection is unknown
+        edge_shading_isects[2 * idx + 0] = -1;
+        // The second intersection is on the edge
+        int face_idx = dot(get_normal(scene.shapes[edge.shape_id], edge.f0), sample_dir) < 0 ? edge.f0 : edge.f1;
+        edge_shading_isects[2 * idx + 1] = Intersection(edge.shape_id, face_idx);
+        edge_shading_points[2 * idx + 1].position = shading_point.position + sample_p;
     }
 
     const FlattenScene scene;
@@ -2004,6 +2054,8 @@ struct secondary_edge_sampler {
     RayDifferential *bsdf_differentials;
     Vector3 *new_throughputs;
     Real *edge_min_roughness;
+    Intersection *edge_shading_isects;
+    SurfacePoint *edge_shading_points;
 };
 
 void sample_secondary_edges(const Scene &scene,
@@ -2024,7 +2076,9 @@ void sample_secondary_edges(const Scene &scene,
                             BufferView<Ray> rays,
                             BufferView<RayDifferential> &bsdf_differentials,
                             BufferView<Vector3> new_throughputs,
-                            BufferView<Real> edge_min_roughness) {
+                            BufferView<Real> edge_min_roughness,
+                            BufferView<Intersection> &edge_shading_isects,
+                            BufferView<SurfacePoint> &edge_shading_points) {
     auto cam_org = xfm_point(scene.camera.cam_to_world, Vector3{0, 0, 0});
     auto edge_tree = scene.edge_sampler.edge_tree.get();
     parallel_for(secondary_edge_sampler{
@@ -2054,7 +2108,9 @@ void sample_secondary_edges(const Scene &scene,
         rays.begin(),
         bsdf_differentials.begin(),
         new_throughputs.begin(),
-        edge_min_roughness.begin()},
+        edge_min_roughness.begin(),
+        edge_shading_isects.begin(),
+        edge_shading_points.begin(),},
         active_pixels.size(), scene.use_gpu);
 }
 
