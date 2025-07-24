@@ -22,6 +22,46 @@ namespace py = pybind11;
 PYBIND11_MODULE(redner, m) {
     m.doc() = "Redner"; // optional module docstring
 
+    py::class_<ptr<float>>(m, "float_ptr", py::module_local())
+        .def(py::init<std::size_t>())
+        .def("allocate", &ptr<float>::allocate)
+        .def("destroy_array", &ptr<float>::destroy_array)
+        .def("set_index", &ptr<float>::set_index)
+        .def("get_index", &ptr<float>::get_index)
+        .def("get_pointer", &ptr<float>::get_pointer)
+        .def("copy", &ptr<float>::copy);
+
+    py::class_<ptr<double>>(m, "double_ptr", py::module_local())
+        .def(py::init<std::size_t>())
+        .def("allocate", &ptr<double>::allocate)
+        .def("destroy_array", &ptr<double>::destroy_array)
+        .def("set_index", &ptr<double>::set_index)
+        .def("get_index", &ptr<double>::get_index)
+        .def("get_pointer", &ptr<double>::get_pointer);
+
+    py::class_<ptr<int>>(m, "int_ptr", py::module_local())
+        .def(py::init<std::size_t>())
+        .def("allocate", &ptr<int>::allocate)
+        .def("destroy_array", &ptr<int>::destroy_array)
+        .def("set_index", &ptr<int>::set_index)
+        .def("get_index", &ptr<int>::get_index)
+        .def("get_pointer", &ptr<int>::get_pointer);
+
+    py::class_<ptr<Vector3>>(m, "Vector3_ptr", py::module_local())
+        .def(py::init<std::size_t>())
+        .def("allocate", &ptr<Vector3>::allocate)
+        .def("destroy_array", &ptr<Vector3>::destroy_array)
+        .def("set_index", &ptr<Vector3>::set_index)
+        .def("get_index", &ptr<Vector3>::get_index)
+        .def("get_pointer", &ptr<Vector3>::get_pointer);
+
+    py::class_<ptr<Vector4>>(m, "Vector4_ptr", py::module_local())
+        .def(py::init<std::size_t>())
+        .def("allocate", &ptr<Vector4>::allocate)
+        .def("destroy_array", &ptr<Vector4>::destroy_array)
+        .def("set_index", &ptr<Vector4>::set_index)
+        .def("get_index", &ptr<Vector4>::get_index)
+        .def("get_pointer", &ptr<Vector4>::get_pointer);
 
     py::enum_<CameraType>(m, "CameraType", py::module_local())
         .value("perspective", CameraType::Perspective)
