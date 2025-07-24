@@ -16,6 +16,7 @@
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/operators.h>
 
 namespace py = pybind11;
 
@@ -291,9 +292,58 @@ PYBIND11_MODULE(redner, m) {
 
     py::class_<Vector3f>(m, "Vector3f", py::module_local())
         .def(py::init<float, float, float>())
+        .def(py::self + py::self)
         .def_readwrite("x", &Vector3f::x)
         .def_readwrite("y", &Vector3f::y)
         .def_readwrite("z", &Vector3f::z);
+
+    py::class_<Vector4f>(m, "Vector4f", py::module_local())
+        .def(py::init<float, float, float, float>())
+        .def(py::self + py::self)
+        .def(py::self - py::self)
+        .def_readwrite("x", &Vector4f::x)
+        .def_readwrite("y", &Vector4f::y)
+        .def_readwrite("z", &Vector4f::z)
+        .def_readwrite("w", &Vector4f::w);
+
+    py::class_<Vector3>(m, "Vector3", py::module_local())
+        .def(py::init<double, double, double>())
+        .def(py::self + py::self)
+        .def(py::self - py::self)
+        .def_readwrite("x", &Vector3::x)
+        .def_readwrite("y", &Vector3::y)
+        .def_readwrite("z", &Vector3::z);
+
+    py::class_<Vector4>(m, "Vector4", py::module_local())
+        .def(py::init<double, double, double, double>())
+        .def(py::self + py::self)
+        .def(py::self - py::self)
+        .def_readwrite("x", &Vector4::x)
+        .def_readwrite("y", &Vector4::y)
+        .def_readwrite("z", &Vector4::z)
+        .def_readwrite("w", &Vector4::w);
+
+    py::class_<Matrix3x3f>(m, "Matrix3x3f", py::module_local())
+        .def(py::init<float, float, float,
+                      float, float, float,
+                      float, float, float>())
+        .def("col", &Matrix3x3f::col)
+        .def("row", &Matrix3x3f::row)
+        .def("__call__", [](const Matrix3x3f &m, int i, int j){
+                   return m(i, j);
+                 }
+            );
+
+    py::class_<Matrix3x3>(m, "Matrix3x3", py::module_local())
+        .def(py::init<double, double, double,
+                      double, double, double,
+                      double, double, double>())
+        .def("col", &Matrix3x3::col)
+        .def("row", &Matrix3x3::row)
+        .def("__call__", [](const Matrix3x3 &m, int i, int j){
+                   return m(i, j);
+                 }
+            );
 
     py::class_<Matrix4x4f>(m, "Matrix4x4f", py::module_local())
         .def(py::init<float, float, float, float,

@@ -120,6 +120,30 @@ inline auto operator+(const TVector3<T0> &v0,
 
 template <typename T0, typename T1>
 DEVICE
+inline auto operator+(const T0 &v0,
+                      const TVector4<T1> &v1) -> TVector4<decltype(v0 + v1[0])> {
+    return TVector4<decltype(v0 + v1[0])>{
+        v0 + v1[0], v0 + v1[1], v0 + v1[2], v0 + v1[3]};
+}
+
+template <typename T0, typename T1>
+DEVICE
+inline auto operator+(const TVector4<T0> &v0,
+                      const T1 &v1) -> TVector4<decltype(v0[0] + v1)> {
+    return TVector4<decltype(v0[0] + v1)>{
+        v0[0] + v1, v0[1] + v1, v0[2] + v1, v0[3] + v1};
+}
+
+template <typename T0, typename T1>
+DEVICE
+inline auto operator+(const TVector4<T0> &v0,
+                      const TVector4<T1> &v1) -> TVector4<decltype(v0[0] + v1[0])> {
+    return TVector4<decltype(v0[0] + v1[0])>{
+        v0[0] + v1[0], v0[1] + v1[1], v0[2] + v1[2], v0[3] + v1[3]};
+}
+
+template <typename T0, typename T1>
+DEVICE
 inline auto operator+=(TVector2<T0> &v0,
                        const TVector2<T1> &v1) -> TVector2<T0>& {
     v0[0] += v1[0];
@@ -163,6 +187,13 @@ inline auto operator-(const T0 &v0,
 
 template <typename T0, typename T1>
 DEVICE
+inline auto operator-(const T0 &v0,
+                      const TVector4<T1> &v1) -> TVector4<decltype(v0 - v1[0])> {
+    return TVector3<decltype(v0 - v1[0])>{v0 - v1[0], v0 - v1[1], v0 - v1[2], v0 - v1[3]};
+}
+
+template <typename T0, typename T1>
+DEVICE
 inline auto operator-(const TVector3<T0> &v0,
                       const T1 &v1) -> TVector3<decltype(v0[0] - v1)> {
     return TVector3<decltype(v0[0] - v1)>{v0[0] - v1, v0[1] - v1, v0[2] - v1};
@@ -187,6 +218,11 @@ DEVICE
 inline auto operator-(const TVector3<T> &v) -> TVector3<T> {
     return TVector3<T>{-v[0], -v[1], -v[2]};
 }
+template <typename T>
+DEVICE
+inline auto operator-(const TVector4<T> &v) -> TVector4<T> {
+    return TVector4<T>{-v[0], -v[1], -v[2], -v[3]};
+}
 
 template <typename T0, typename T1>
 DEVICE
@@ -194,6 +230,14 @@ inline auto operator-(const TVector3<T0> &v0,
                       const TVector3<T1> &v1) -> TVector3<decltype(v0[0] - v1[0])> {
     return TVector3<decltype(v0[0] - v1[0])>{
         v0[0] - v1[0], v0[1] - v1[1], v0[2] - v1[2]};
+}
+
+template <typename T0, typename T1>
+DEVICE
+inline auto operator-(const TVector4<T0> &v0,
+                      const TVector4<T1> &v1) -> TVector4<decltype(v0[0] - v1[0])> {
+    return TVector4<decltype(v0[0] - v1[0])>{
+        v0[0] - v1[0], v0[1] - v1[1], v0[2] - v1[2], v0[3] - v1[3]};
 }
 
 template <typename T0, typename T1>
@@ -212,6 +256,17 @@ inline auto operator-=(TVector3<T0> &v0,
     v0[0] -= v1[0];
     v0[1] -= v1[1];
     v0[2] -= v1[2];
+    return v0;
+}
+
+template <typename T0, typename T1>
+DEVICE
+inline auto operator-=(TVector4<T0> &v0,
+                       const TVector4<T1> &v1) -> TVector4<T0>& {
+    v0[0] -= v1[0];
+    v0[1] -= v1[1];
+    v0[2] -= v1[2];
+    v0[3] -= v1[3];
     return v0;
 }
 
@@ -284,6 +339,41 @@ inline auto operator*(const TVector3<T0> &v0,
 
 template <typename T0, typename T1>
 DEVICE
+inline auto operator*(const TVector4<T0> &v0,
+                      const T1 &s) -> TVector4<decltype(v0[0] * s)> {
+    return TVector4<decltype(v0[0] * s)>{
+        v0[0] * s, v0[1] * s, v0[2] * s, v0[3] * s};
+}
+
+template <typename T0, typename T1>
+DEVICE
+inline auto operator*(const T0 &s,
+                      const TVector4<T1> &v0) -> TVector4<decltype(s * v0[0])> {
+    return TVector4<decltype(s * v0[0])>{
+        s * v0[0], s * v0[1], s * v0[2], s * v0[3]};
+}
+
+template <typename T0, typename T1>
+DEVICE
+inline auto operator*=(TVector4<T0> &v0,
+                       const T1 &s) -> TVector4<T0>& {
+    v0[0] *= s;
+    v0[1] *= s;
+    v0[2] *= s;
+    v0[3] *= s;
+    return v0;
+}
+
+template <typename T0, typename T1>
+DEVICE
+inline auto operator*(const TVector4<T0> &v0,
+                      const TVector4<T1> &v1) -> TVector4<decltype(v0[0] * v1[0])> {
+    return TVector4<decltype(v0[0] * v1[0])>{
+        v0[0] * v1[0], v0[1] * v1[1], v0[2] * v1[2], v0[3] * v1[3]};
+}
+
+template <typename T0, typename T1>
+DEVICE
 inline auto operator/(const TVector2<T0> &v0,
                       const T1 &s) -> decltype(v0 * (1.f / s)) {
     auto inv_s = 1.f / s;
@@ -293,6 +383,14 @@ inline auto operator/(const TVector2<T0> &v0,
 template <typename T0, typename T1>
 DEVICE
 inline auto operator/(const TVector3<T0> &v0,
+                      const T1 &s) -> decltype(v0 * (1.f / s)) {
+    auto inv_s = 1.f / s;
+    return v0 * inv_s;
+}
+
+template <typename T0, typename T1>
+DEVICE
+inline auto operator/(const TVector4<T0> &v0,
                       const T1 &s) -> decltype(v0 * (1.f / s)) {
     auto inv_s = 1.f / s;
     return v0 * inv_s;
@@ -322,6 +420,17 @@ inline auto operator/(const TVector3<T0> &v0,
         v0[0] / v1[0], v0[1] / v1[1], v0[2] / v1[2]};
 }
 
+
+template <typename T0, typename T1>
+DEVICE
+inline auto operator/=(TVector2<T0> &v0,
+                       const T1 &s) -> TVector2<T0>& {
+    auto inv_s = 1.f / s;
+    v0[0] *= inv_s;
+    v0[1] *= inv_s;
+    return v0;
+}
+
 template <typename T0, typename T1>
 DEVICE
 inline auto operator/=(TVector3<T0> &v0,
@@ -335,9 +444,28 @@ inline auto operator/=(TVector3<T0> &v0,
 
 template <typename T0, typename T1>
 DEVICE
+inline auto operator/=(TVector4<T0> &v0,
+                       const T1 &s) -> TVector4<T0>& {
+    auto inv_s = 1.f / s;
+    v0[0] *= inv_s;
+    v0[1] *= inv_s;
+    v0[2] *= inv_s;
+    v0[3] *= inv_s;
+    return v0;
+}
+
+template <typename T0, typename T1>
+DEVICE
 inline bool operator==(const TVector3<T0> &v0,
                        const TVector3<T1> &v1) {
     return v0.x == v1.x && v0.y == v1.y && v0.z == v1.z;
+}
+
+template <typename T0, typename T1>
+DEVICE
+inline bool operator==(const TVector4<T0> &v0,
+                       const TVector4<T1> &v1) {
+    return v0.x == v1.x && v0.y == v1.y && v0.z == v1.z && v0.w == v1.w;
 }
 
 template <typename T0, typename T1>
@@ -409,6 +537,34 @@ inline TVector3<T> d_length(const TVector3<T> &v0, const T &d_l) {
     return d_length_squared(v0, d_l_sq);
 }
 
+template <typename T>
+DEVICE
+inline T length_squared(const TVector4<T> &v0) {
+    return square(v0[0]) + square(v0[1]) + square(v0[2]) + square(v0[3]);
+}
+
+template <typename T>
+DEVICE
+inline TVector4<T> d_length_squared(const TVector4<T> &v0, const T &d_l_sq) {
+    //l_sq = square(v0[0]) + square(v0[1]) + square(v0[2])
+    return 2 * d_l_sq * v0;
+}
+
+template <typename T>
+DEVICE
+inline T length(const TVector4<T> &v0) {
+    return sqrt(length_squared(v0));
+}
+
+template <typename T>
+DEVICE
+inline TVector4<T> d_length(const TVector4<T> &v0, const T &d_l) {
+    auto l_sq = length_squared(v0);
+    auto l = sqrt(l_sq);
+    auto d_l_sq = 0.5f * d_l / l;
+    return d_length_squared(v0, d_l_sq);
+}
+
 template <typename T0, typename T1>
 DEVICE
 inline auto distance_squared(const TVector3<T0> &v0,
@@ -461,6 +617,17 @@ inline TVector3<T> normalize(const TVector3<T> &v0) {
 
 template <typename T>
 DEVICE
+inline TVector4<T> normalize(const TVector4<T> &v0) {
+    auto l = length(v0);
+    if (l <= 0) {
+        return TVector4<T>{0, 0, 0, 0};
+    } else {
+        return v0 / l;
+    }
+}
+
+template <typename T>
+DEVICE
 inline TVector3<T> d_normalize(const TVector3<T> &v0, const TVector3<T> &d_n) {
     auto l = length(v0);
     if (l <= 0) {
@@ -489,6 +656,16 @@ inline auto dot(const TVector3<T0> &v0, const TVector3<T1> &v1)
     return v0[0] * v1[0] +
            v0[1] * v1[1] +
            v0[2] * v1[2];
+}
+
+template <typename T0, typename T1>
+DEVICE
+inline auto dot(const TVector4<T0> &v0, const TVector4<T1> &v1)
+        -> decltype(v0[0] * v1[0]) {
+    return v0[0] * v1[0] +
+           v0[1] * v1[1] +
+           v0[2] * v1[2] +
+           v0[3] * v1[3];
 }
 
 template <typename T0, typename T1>
@@ -617,6 +794,89 @@ inline TVector3<T> max(const TVector3<T> &v0, const TVector3<T> &v1) {
 
 template <typename T>
 DEVICE
+inline T maximum(const TVector3<T> &v0) {
+    if (v0.x > v0.y && v0.x > v0.z) {
+        return v0.x;
+    } else if (v0.y > v0.z) {
+        return v0.y;
+    } else {
+        return v0.z;
+    }
+}
+
+template <typename T>
+DEVICE
+inline T maximum(const TVector4<T> &v0) {
+    if (v0.x > v0.y && v0.x > v0.z && v0.x > v0.w) {
+        return v0.x;
+    } else if (v0.y > v0.z && v0.y > v0.w) {
+        return v0.y;
+    } else if (v0.z > v0.w) {
+        return v0.z;
+    } else {
+        return v0.w;
+    }   
+
+}
+
+template <typename T>
+DEVICE
+inline T minimum(const TVector3<T> &v0) {
+    if (v0.x < v0.y && v0.x < v0.z) {
+        return v0.x;
+    } else if (v0.y < v0.z) {
+        return v0.y;
+    } else {
+        return v0.z;
+    }
+}
+
+template <typename T>
+DEVICE
+inline T minimum(const TVector4<T> &v0) {
+    if (v0.x < v0.y && v0.x < v0.z && v0.x < v0.w) {
+        return v0.x;
+    } else if (v0.y < v0.z && v0.y < v0.w) {
+        return v0.y;
+    } else if (v0.z < v0.w) {
+        return v0.z;
+    } else {
+        return v0.w;
+    }   
+}
+
+template <typename T>
+DEVICE
+inline size_t argmax(const TVector3<T> &v0) {
+    if (v0.x > v0.y && v0.x > v0.z) {
+        return 0;
+    } else if (v0.y > v0.z) {
+        return 1;
+    } else {
+        return 2;
+    }
+}
+
+template <typename T>
+DEVICE
+inline size_t argmin(const TVector3<T> &v0) {
+    if (v0.x < v0.y && v0.x < v0.z) {
+        return 0;
+    } else if (v0.y < v0.z) {
+        return 1;
+    } else {
+        return 2;
+    }
+}
+
+template <typename T>
+DEVICE
+inline TVector3<T> abs(const TVector3<T> &v0) {
+    return TVector3<T>{std::abs(v0.x), std::abs(v0.y), std::abs(v0.z)};
+}
+
+template <typename T>
+DEVICE
 inline TVector3<T> min(const TVector3<T> &v0, const TVector3<T> &v1) {
     return TVector3<T>{min(v0.x, v1.x), min(v0.y, v1.y), min(v0.z, v1.z)};
 }
@@ -630,3 +890,15 @@ template <typename T>
 inline std::ostream& operator<<(std::ostream &os, const TVector3<T> &v) {
     return os << "(" << v[0] << ", " << v[1] << ", " << v[2] << ")";
 }
+template <typename T>
+inline std::ostream& operator<<(std::ostream &os, const TVector4<T> &v) {
+    return os << "(" << v[0] << ", " << v[1] << ", " << v[2] << ", " << v[3] << ")";
+}
+
+template <typename T>
+inline bool operator<(const TVector4<T> v1, const TVector4<T> v2) {
+    return v1.x < v2.x || (v1.x == v2.x && v1.y < v2.y) ||
+           (v1.x == v2.x && v1.y == v2.y && v1.z < v2.z) ||
+           (v1.x == v2.x && v1.y == v2.y && v1.z == v2.z && v1.w < v2.w);
+}
+

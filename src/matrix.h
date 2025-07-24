@@ -448,6 +448,58 @@ inline TMatrix4x4<T> operator*(const TMatrix4x4<T> &m0, const TMatrix4x4<T> &m1)
 
 template <typename T>
 DEVICE
+inline TVector4<T> operator*(const TVector4<T> &v, const TMatrix4x4<T> &m) {
+    TVector4<T> ret;
+    for (int i = 0; i < 4; i++) {
+        ret[i] = T(0);
+        for (int j = 0; j < 4; j++) {
+            ret[i] += v[j] * m(j, i);
+        }
+    }
+    return ret;
+}
+
+template <typename T>
+DEVICE
+inline TVector4<T> operator*(const TMatrix4x4<T> &m, const TVector4<T> &v) {
+    TVector4<T> ret;
+    for (int i = 0; i < 4; i++) {
+        ret[i] = 0.f;
+        for (int j = 0; j < 4; j++) {
+            ret[i] += m(i, j) * v[j];
+        }
+    }
+    return ret;
+}
+
+template <typename T0, typename T1>
+DEVICE
+inline auto operator*(const TMatrix4x4<T0> &m0, const T1 &s) 
+        -> TMatrix4x4<decltype(m0(0, 0) * s)> {
+    TMatrix4x4<decltype(m0(0, 0) * s)> m;
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            m(i, j) = m0(i, j) * s;
+        }
+    }
+    return m;
+}
+
+template <typename T0, typename T1>
+DEVICE
+inline auto operator*(const T1 &s, const TMatrix4x4<T0> &m0) 
+        -> TMatrix4x4<decltype(m0(0, 0) * s)> {
+    TMatrix4x4<decltype(m0(0, 0) * s)> m;
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            m(i, j) = m0(i, j) * s;
+        }
+    }
+    return m;
+}
+
+template <typename T>
+DEVICE
 TMatrix4x4<T> inverse(const TMatrix4x4<T> &m) {
     // https://stackoverflow.com/questions/1148309/inverting-a-4x4-matrix
     TMatrix4x4<T> inv;
