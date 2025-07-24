@@ -36,16 +36,30 @@ DEVICE inline double next_pcg32_double(pcg32_state *rng) {
 }
 
 // Initialize each pixel with a PCG rng with a different stream
+// Use Tiny Encryption Algorithm to scrambde the seed and the stream index
+// see https://github.com/mitsuba-renderer/mitsuba3/blob/master/include/mitsuba/core/random.h
 struct pcg_initializer {
     DEVICE void operator()(int idx) {
+        
+        uint32_t sum = 0;
+        uint32_t v0 = seed;
+        uint32_t v1 = uint32_t(idx);
+        for (int i = 0; i < 4; ++i) {
+            sum += 0x9e3779b9;
+            v0 += ((v1<<4u) + 0xa341316c) ^ (v1 + sum) ^ ((v1>>5u) + 0xc8013ea4);
+            v1 += ((v0<<4u) + 0xad90777d) ^ (v0 + sum) ^ ((v0>>5u) + 0x7e95761e);
+        }
+        uint64_t initstate = v0;
+        uint64_t initseq = v1;
+
         rng_states[idx].state = 0U;
-        rng_states[idx].inc = (((uint64_t)idx + 1) << 1u) | 1u;
+        rng_states[idx].inc = (((uint64_t)initseq + 1u) << 1u) | 1u;
         next_pcg32(&rng_states[idx]);
-        rng_states[idx].state += (0x853c49e6748fea9bULL + seed);
+        rng_states[idx].state += initstate;
         next_pcg32(&rng_states[idx]);
     }
 
-    uint64_t seed;
+    uint32_t seed;
     pcg32_state *rng_states;
 };
 
@@ -74,7 +88,7 @@ struct pcg_sampler_double {
 };
 
 PCGSampler::PCGSampler(bool use_gpu,
-                       uint64_t seed,
+                       uint32_t seed,
                        int num_pixels) : use_gpu(use_gpu) {
     rng_states = Buffer<pcg32_state>(use_gpu, num_pixels);
     parallel_for(pcg_initializer{seed, rng_states.begin()},

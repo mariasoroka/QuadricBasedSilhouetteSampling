@@ -8,7 +8,7 @@ struct pcg32_state {
 };
 
 struct PCGSampler : public Sampler {
-    PCGSampler(bool use_gpu, uint64_t seed, int num_pixels);
+    PCGSampler(bool use_gpu, uint32_t seed, int num_pixels);
     ~PCGSampler();
 
     void next_camera_samples(BufferView<TCameraSample<float>> samples, bool sample_pixel_center) override;
