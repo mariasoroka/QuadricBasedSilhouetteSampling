@@ -88,6 +88,7 @@ set(SRCS src/aabb.h
          src/shape_adjacency.h
          src/sobol.inc
          src/sobol_sampler.h
+         src/solid_angles.h
          src/test_utils.h
          src/texture.h
          src/transform.h
@@ -130,6 +131,7 @@ set(SRCS src/aabb.h
          src/shape.cpp
          src/shape_adjacency.cpp
          src/sobol_sampler.cpp
+         src/solid_angles.cpp
          src/vmf.cpp
          src/warp_aux.cpp
          src/warp_cv.cpp

@@ -17,6 +17,7 @@
 #include "rejection_test.h"
 #include "lp_solve.h"
 #include "offset_quadric.h"
+#include "solid_angles.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -325,6 +326,11 @@ PYBIND11_MODULE(redner, m) {
                       bool,
                       Real>());
 
+    py::class_<SurfacePoint>(m, "SurfacePoint", py::module_local())
+        .def(py::init<>())
+        .def_readwrite("position", &SurfacePoint::position)
+        .def_readwrite("geom_normal", &SurfacePoint::geom_normal)
+        .def_readwrite("shading_frame", &SurfacePoint::shading_frame);
         
     py::class_<Vector2i>(m, "Vector2i", py::module_local())
         .def(py::init<int, int>())
@@ -489,6 +495,12 @@ PYBIND11_MODULE(redner, m) {
     m.def("test_solve_lp", &test_solve_lp<double>, "");
     m.def("test_find_offset_quadric_vector", &test_find_offset_quadric_vector<double>, "");
     m.def("test_find_approx_bounding_sphere", &test_find_approx_bounding_sphere<double>, "");
+    m.def("atan2_approx", &atan2_approx, "");
+    m.def("test_polygon_solid_angle", &test_polygon_solid_angle, "");
+    m.def("bbox_solid_angle", &bbox_solid_angle, "");
+    m.def("bbox_ltc", &bbox_ltc, "");
+    m.def("test_bbox_average_bsdf", &test_bbox_average_bsdf, "");
+    
     /// Tests
     m.def("test_sample_primary_rays", &test_sample_primary_rays, "");
     m.def("test_scene_intersect", &test_scene_intersect, "");
