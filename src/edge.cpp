@@ -177,10 +177,18 @@ struct edge_remover {
         auto ns_v1 = Vector3{get_non_shared_v1(shapes, e)};
         auto n0 = normalize(cross(v0 - ns_v0, v1 - ns_v0));
         auto n1 = normalize(cross(v1 - ns_v1, v0 - ns_v1));
-        return dot(n0, n1) >= (1 - 1e-6f);
+        auto mid_point_vec = normalize((ns_v0 + ns_v1) / 2 - v0);
+        auto n0_geom = Vector3{get_normal(shapes[e.shape_id], e.f0)};
+        auto n1_geom = Vector3{get_normal(shapes[e.shape_id], e.f1)};
+        if (remove_concave) {
+            return (dot(n0, n1) >= (1 - 1e-6f)) || (dot(mid_point_vec, n0_geom) > 0) || (dot(mid_point_vec, n1_geom) > 0);
+        }
+        else {
+            return dot(n0, n1) >= (1 - 1e-6f);
+        }
     }
-
     const Shape *shapes;
+    bool remove_concave;
 };
 
 struct primary_edge_weighter {
@@ -232,7 +240,8 @@ struct secondary_edge_weighter {
 
 EdgeSampler::EdgeSampler(const Scene &scene,
                          bool use_primary_edge_sampling,
-                         bool use_secondary_edge_sampling) {
+                         bool use_secondary_edge_sampling,
+                         bool remove_concave) {
     if (!use_primary_edge_sampling && !use_secondary_edge_sampling) {
         // No need to collect edges
         return;
@@ -296,7 +305,7 @@ EdgeSampler::EdgeSampler(const Scene &scene,
     }
     // Remove edges with 180 degree dihedral angles
     auto edges_end = DISPATCH(scene.use_gpu, thrust::remove_if, edges.begin(),
-        edges.begin() + current_num_edges, edge_remover{shapes_buffer.begin()});
+        edges.begin() + current_num_edges, edge_remover{shapes_buffer.begin(), remove_concave});
     edges.count = edges_end - edges.begin();
 
     if (use_primary_edge_sampling) {

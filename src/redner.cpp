@@ -117,7 +117,8 @@ PYBIND11_MODULE(redner, m) {
                       bool,
                       int>())
         .def_readonly("max_generic_texture_dimension",
-            &Scene::max_generic_texture_dimension);
+            &Scene::max_generic_texture_dimension)
+        .def_readwrite("remove_concave", &Scene::remove_concave);
 
     py::class_<DScene, std::shared_ptr<DScene>>(m, "DScene", py::module_local())
         .def(py::init<const DCamera &,
@@ -271,7 +272,8 @@ PYBIND11_MODULE(redner, m) {
                       SamplerType,
                       bool, // sample_pixel_center
                       bool, // use_primary_edge_sampling
-                      bool  // use_secondary_edge_sampling
+                      bool, // use_secondary_edge_sampling
+                      bool // remove_concave
                       >())
         .def_readwrite("seed", &edge_sampling::RenderOptions::seed)
         .def_readwrite("num_samples", &edge_sampling::RenderOptions::num_samples);

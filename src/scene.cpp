@@ -354,8 +354,9 @@ Scene::~Scene() {
 }
 
 void Scene::make_edge_sampler(bool use_primary_edge_sampling,
-                              bool use_secondary_edge_sampling) {
-    edge_sampler = EdgeSampler(*this, use_primary_edge_sampling, use_secondary_edge_sampling);
+                              bool use_secondary_edge_sampling,
+                              bool remove_concave) {
+    edge_sampler = EdgeSampler(*this, use_primary_edge_sampling, use_secondary_edge_sampling, remove_concave);
 }
 
 DScene::DScene(const DCamera &camera,

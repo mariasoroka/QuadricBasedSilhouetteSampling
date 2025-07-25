@@ -31,7 +31,8 @@ struct Scene {
           int gpu_index);
     ~Scene();
     void make_edge_sampler(bool use_primary_edge_sampling,
-                           bool use_secondary_edge_sampling);
+                           bool use_secondary_edge_sampling,
+                           bool remove_concave);
 
     // Flatten arrays of scene content
     Camera camera;
@@ -46,6 +47,7 @@ struct Scene {
     int gpu_index;
     bool use_primary_edge_sampling;
     bool use_secondary_edge_sampling;
+    bool remove_concave;
 
     // For G-buffer rendering with textures of arbitrary number of channels.
     int max_generic_texture_dimension;

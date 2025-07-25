@@ -24,6 +24,7 @@ namespace edge_sampling {
         bool sample_pixel_center;
         bool use_primary_edge_sampling;
         bool use_secondary_edge_sampling;
+        bool remove_concave;
     };
 
     void render(Scene &scene,

@@ -61,7 +61,8 @@ struct EdgeSampler {
     EdgeSampler() {}
     EdgeSampler(const Scene &scene,
                 bool use_primary_edge_sampling,
-                bool use_secondary_edge_sampling);
+                bool use_secondary_edge_sampling,
+                bool remove_concave);
 
     Buffer<Edge> edges;
     Buffer<Real> primary_edges_pmf;

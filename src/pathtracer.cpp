@@ -236,7 +236,10 @@ namespace edge_sampling {
     #endif
         scene.use_primary_edge_sampling = options.use_primary_edge_sampling;
         scene.use_secondary_edge_sampling = options.use_secondary_edge_sampling;
-        scene.make_edge_sampler(options.use_primary_edge_sampling, options.use_secondary_edge_sampling);
+
+        
+        scene.remove_concave = options.remove_concave;
+        scene.make_edge_sampler(options.use_primary_edge_sampling, options.use_secondary_edge_sampling, options.remove_concave);
 
         parallel_init();
         if (d_rendered_image.get() != nullptr) {

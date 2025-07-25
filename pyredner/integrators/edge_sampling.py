@@ -20,6 +20,7 @@ class EdgeSamplingIntegrator(Integrator):
                   sample_pixel_center = False,
                   use_primary_edge_sampling = True,
                   use_secondary_edge_sampling = True,
+                  remove_concave = True
                   ):
 
         if isinstance(num_samples, int):
@@ -32,6 +33,7 @@ class EdgeSamplingIntegrator(Integrator):
         self.sample_pixel_center = sample_pixel_center
         self.use_primary_edge_sampling = use_primary_edge_sampling
         self.use_secondary_edge_sampling = use_secondary_edge_sampling
+        self.remove_concave = remove_concave
 
         self.timing = False
 
@@ -105,7 +107,8 @@ class EdgeSamplingIntegrator(Integrator):
                         self.sampler_type,
                         self.sample_pixel_center,
                         self.use_primary_edge_sampling,
-                        use_secondary_edge_sampling)
+                        use_secondary_edge_sampling,
+                        self.remove_concave)
 
         if self.timing:
             start = time.perf_counter()
