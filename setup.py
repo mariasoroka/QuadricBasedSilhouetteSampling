@@ -52,6 +52,25 @@ class Build(build_ext):
 
     def build_extension(self, ext):
         if isinstance(ext, CMakeExtension):
+            # Check if Clp and CoinUtils are compiled
+            Clp_lib_path = os.path.abspath(os.path.dirname(__file__)) + '/Clp/lib/libClp.so.0'
+            CointUtils_lib_path = os.path.abspath(os.path.dirname(__file__)) + '/CoinUtils/lib/libCoinUtils.so.0'
+            Clp_dir_path = os.path.abspath(os.path.dirname(__file__)) + '/Clp'
+            CointUtils_dir_path = os.path.abspath(os.path.dirname(__file__)) + '/CoinUtils'
+            print('Clp path: {}'.format(Clp_lib_path))
+            print('CoinUtils path: {}'.format(CointUtils_lib_path))
+
+            if not os.path.exists(CointUtils_lib_path):
+                subprocess.call(['./configure', '-C', '--prefix=' + CointUtils_dir_path], cwd=CointUtils_dir_path, shell=False)
+                print('Compiling CoinUtils...')
+                subprocess.call(['make'], cwd=CointUtils_dir_path, shell=False)
+                subprocess.call(['make', 'install'], cwd=CointUtils_dir_path, shell=False)
+            if not os.path.exists(Clp_lib_path):
+                subprocess.call(['./configure', '-C', '--prefix=' + Clp_dir_path, 'PKG_CONFIG_PATH=' + CointUtils_dir_path + '/lib/pkgconfig'], cwd=Clp_dir_path, shell=False)
+                subprocess.call(['make'], cwd=Clp_dir_path, shell=False)
+                subprocess.call(['make', 'install'], cwd=Clp_dir_path, shell=False)
+
+
             extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
             info = get_paths()
             include_path = info['include']
@@ -124,6 +143,8 @@ elif sys.platform == 'linux':
     dynamic_libraries.append('redner-dependencies/embree/lib-linux/libembree3.so.3')
     dynamic_libraries.append('redner-dependencies/embree/lib-linux/libtbb.so.2')
     dynamic_libraries.append('redner-dependencies/embree/lib-linux/libtbbmalloc.so.2')
+    dynamic_libraries.append('CoinUtils/lib/libCoinUtils.so.0')
+    dynamic_libraries.append('Clp/lib/libClp.so.0')
     if build_with_cuda:
         dynamic_libraries.append('redner-dependencies/optix/lib64/liboptix_prime.so.1')
 elif sys.platform == 'win32':

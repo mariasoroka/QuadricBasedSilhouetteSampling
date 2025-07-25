@@ -20,7 +20,7 @@ if(REDNER_CUDA)
     set(CMAKE_CUDA_STANDARD 11)
     if(NOT WIN32)
         # Hack: for some reason the line above doesn't work on some Linux systems.
-        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -std=c++11")
+        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -std=c++14")
     endif()
     # We don't set REQUIRED here as the main OptiX lib will not be found
     # (only OptiX Prime is required)
@@ -31,6 +31,8 @@ else()
 endif()
 
 find_package(Embree REQUIRED)
+find_package(CoinUtils REQUIRED)
+find_package(Clp REQUIRED)
 
 if(NOT MSVC)
   # These compile definitions are not meaningful for MSVC
@@ -167,6 +169,8 @@ endif()
 target_include_directories(redner PUBLIC ${PYTHON_INCLUDE_DIRS})
 target_include_directories(redner PUBLIC ${EMBREE_INCLUDE_PATH})
 target_include_directories(redner PUBLIC pybind11/include)
+target_include_directories(redner PUBLIC ${CLP_INCLUDE_PATH})
+target_include_directories(redner PUBLIC ${COINUTILS_INCLUDE_PATH})
 
 if(REDNER_CUDA)
     include_directories(${OptiX_INCLUDE})
@@ -187,7 +191,7 @@ if(APPLE)
     set(DYNAMIC_LOOKUP "-undefined dynamic_lookup")
 endif()
 
-target_link_libraries(redner ${EMBREE_LIBRARY} ${DYNAMIC_LOOKUP})
+target_link_libraries(redner ${EMBREE_LIBRARY} ${COINUTILS_LIBRARY} ${CLP_LIBRARY} ${DYNAMIC_LOOKUP} )
 
 if(WIN32)
     # See: https://pybind11.readthedocs.io/en/master/compiling.html#advanced-interface-library-target
