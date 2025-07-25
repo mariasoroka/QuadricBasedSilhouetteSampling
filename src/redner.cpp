@@ -15,6 +15,7 @@
 #include "shape.h"
 #include "quadric.h"
 #include "rejection_test.h"
+#include "lp_solve.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -477,6 +478,7 @@ PYBIND11_MODULE(redner, m) {
     m.def("find_basis", static_cast<TMatrix3x3<double> (*)(const TVector3<double>&)>(&find_basis<double>), "");
     m.def("test_aabb", &test_aabb, "");
     m.def("rejection_test_py", &rejection_test_py<double>, "");
+    m.def("test_solve_lp", &test_solve_lp<double>, "");
     /// Tests
     m.def("test_sample_primary_rays", &test_sample_primary_rays, "");
     m.def("test_scene_intersect", &test_scene_intersect, "");

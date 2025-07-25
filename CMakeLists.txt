@@ -64,6 +64,7 @@ set(SRCS src/aabb.h
          src/intersection.h
          src/line_clip.h
          src/load_serialized.h
+         src/lp_solve.h
          src/ltc.inc
          src/material.h
          src/matrix.h
