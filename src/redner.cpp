@@ -16,6 +16,7 @@
 #include "quadric.h"
 #include "rejection_test.h"
 #include "lp_solve.h"
+#include "offset_quadric.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -467,6 +468,11 @@ PYBIND11_MODULE(redner, m) {
         .def_readwrite("p_min", &AABB3::p_min)
         .def_readwrite("p_max", &AABB3::p_max);
     m.def("corner", &corner, "");
+
+    py::class_<MinSphere3D>(m, "MinSphere3D", py::module_local())
+        .def_readwrite("center", &MinSphere3D::center)
+        .def_readwrite("radius", &MinSphere3D::radius);
+
     m.def("intersect_with_line", &intersect_with_line<double>, "");
     m.def("get_point_on_conic", &get_point_on_conic<double>, "");
     m.def("get_conic_from_quadric", &get_conic_from_quadric<double>, "");
@@ -479,6 +485,8 @@ PYBIND11_MODULE(redner, m) {
     m.def("test_aabb", &test_aabb, "");
     m.def("rejection_test_py", &rejection_test_py<double>, "");
     m.def("test_solve_lp", &test_solve_lp<double>, "");
+    m.def("test_find_offset_quadric_vector", &test_find_offset_quadric_vector<double>, "");
+    m.def("test_find_approx_bounding_sphere", &test_find_approx_bounding_sphere<double>, "");
     /// Tests
     m.def("test_sample_primary_rays", &test_sample_primary_rays, "");
     m.def("test_scene_intersect", &test_scene_intersect, "");

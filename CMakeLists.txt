@@ -69,6 +69,7 @@ set(SRCS src/aabb.h
          src/material.h
          src/matrix.h
          src/miniz.h
+         src/offset_quadric.h
          src/parallel.h
          src/path_contribution.h
          src/pathtracer.h
