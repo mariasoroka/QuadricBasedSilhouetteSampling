@@ -77,6 +77,7 @@ set(SRCS src/aabb.h
          src/ray.h
          src/rebuild_topology.h
          src/redner.h
+         src/rejection_test.h
          src/sampler.h
          src/scene.h
          src/shape.h
@@ -93,6 +94,7 @@ set(SRCS src/aabb.h
          src/warp_cv.h
          src/warp_field.h
          src/warp_rr.h
+         src/quadric.h
          src/ltc.h
          src/quadric.h
          xatlas/xatlas.h
