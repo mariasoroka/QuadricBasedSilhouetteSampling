@@ -73,6 +73,16 @@ struct EdgeSampler {
     std::unique_ptr<EdgeTree> edge_tree;
 };
 
+struct BVHStackItemH {
+    BVHNodePtr node_ptr;
+    int num_samples;
+    Real pmf;
+};
+
+struct BVHStackItemL {
+    BVHNodePtr node_ptr;
+};
+
 using PrimaryEdgeSample = TPrimaryEdgeSample<Real>;
 using SecondaryEdgeSample = TSecondaryEdgeSample<Real>;
 
@@ -206,30 +216,33 @@ inline bool is_silhouette(const Shape *shapes, const Vector3 &p, const Edge &edg
 }
 
 DEVICE
-inline bool is_silhouette_dir(const Shape *shapes, const Vector3 &dir, const Edge &edge) {
-    if (edge.f0 == -1 || edge.f1 == -1) {
-        // Only adjacent to one face
-        return true;
-    }
+inline bool is_onesided(const Shape *shapes, const Edge &edge) {
     auto v0 = Vector3{get_v0(shapes, edge)};
     auto v1 = Vector3{get_v1(shapes, edge)};
-    auto ns_v0 = Vector3{get_non_shared_v0(shapes, edge)};
-    auto ns_v1 = Vector3{get_non_shared_v1(shapes, edge)};
-    auto n0 = normalize(cross(v0 - ns_v0, v1 - ns_v0));
-    auto n1 = normalize(cross(v1 - ns_v1, v0 - ns_v1));
-    if (!has_shading_normals(shapes[edge.shape_id])) {
-        // If we are not using Phong normal, every edge is silhouette,
-        // except edges with dihedral angle of 0
-        if (dot(n0, n1) >= 1 - 1e-6f) {
-            return false;
+    if (edge.f0 == -1 || edge.f1 == -1) {
+        // Only adjacent to one face
+        if (edge.f0 != -1) {
+            auto ns_v0 = Vector3{get_non_shared_v0(shapes, edge)};
+            auto n0 = cross(v0 - ns_v0, v1 - ns_v0);
+            auto n0_len_sq = length_squared(n0);
+            if (n0_len_sq < Real(1e-20)) {
+                // Degenerate vertices
+                return false;
+            }
+        }
+        if (edge.f1 != -1) {
+            auto ns_v1 = Vector3{get_non_shared_v1(shapes, edge)};
+            auto n1 = cross(v1 - ns_v1, v0 - ns_v1);
+            auto n1_len_sq = length_squared(n1);
+            if (n1_len_sq < Real(1e-20)) {
+                // Degenerate vertices
+                return false;
+            }
         }
         return true;
     }
-    auto frontfacing0 = dot(dir, n0) > 0.f;
-    auto frontfacing1 = dot(dir, n1) > 0.f;
-    return (frontfacing0 && !frontfacing1) || (!frontfacing0 && frontfacing1);
+    return false;
 }
-
 
 DEVICE
 inline Real compute_exterior_dihedral_angle(const Shape *shapes, const Edge &edge) {
@@ -240,6 +253,72 @@ inline Real compute_exterior_dihedral_angle(const Shape *shapes, const Edge &edg
         exterior_dihedral = acos(clamp(dot(n0, n1), Real(-1), Real(1)));
     }
     return exterior_dihedral;
+}
+
+DEVICE 
+inline Real edge_importance(const Edge &edge,
+                            const SurfacePoint &p,
+                            const Matrix3x3 &m,
+                            const Matrix3x3 &m_inv,
+                            const Matrix3x3 &iso_frame,
+                            const Shape *shapes) {
+    if (!is_silhouette(shapes, p.position, edge)) {
+        return 0;
+    }
+    auto v0 = Vector3{get_v0(shapes, edge)};
+    auto v1 = Vector3{get_v1(shapes, edge)};
+    // If degenerate, the weight is 0
+    if (length_squared(v1 - v0) > 1e-10f) {
+        // Transform the vertices to local coordinates
+        auto v0tmp = iso_frame * (v0 - p.position);
+        auto v1tmp = iso_frame * (v1 - p.position);
+        // If below surface, the weight is 0
+        if (v0tmp[2] > 0.f || v1tmp[2] > 0.f) {
+            // Clip to the horizon
+            if (v0tmp[2] < 0.f) {
+                v0tmp = (v0tmp*v1tmp[2] - v1tmp*v0tmp[2]) / (v1tmp[2] - v0tmp[2]);
+            }
+            // Clip to the horizon
+            if (v1tmp[2] < 0.f) {
+                v1tmp = (v0tmp*v1tmp[2] - v1tmp*v0tmp[2]) / (v1tmp[2] - v0tmp[2]);
+            }
+            // Transform with LTC matrix
+            auto v0o = m_inv * transpose(iso_frame) * v0tmp;
+            auto v1o = m_inv * transpose(iso_frame) * v1tmp;
+            if (v0o[2] > 0.f || v1o[2] > 0.f) {
+                // Clip to the horizon
+                if (v0o[2] < 0.f) {
+                    v0o = (v0o*v1o[2] - v1o*v0o[2]) / (v1o[2] - v0o[2]);
+                }
+                // Clip to the horizon
+                if (v1o[2] < 0.f) {
+                    v1o = (v0o*v1o[2] - v1o*v0o[2]) / (v1o[2] - v0o[2]);
+                }
+
+                if (length(v1o - v0o) < 1e-10f) {
+                    return 0;
+                }
+                // Integrate over the edge using LTC
+                auto vodir = v1o - v0o;
+                auto wt = normalize(vodir);
+                auto l0 = dot(v0o, wt);
+                auto l1 = dot(v1o, wt);
+                auto vo = v0o - l0 * wt;
+                auto d = length(vo);
+                auto I = [&](Real l) {
+                    return (l/(d*(d*d+l*l))+atan(l/d)/(d*d))*vo[2] +
+                        (l*l/(d*(d*d+l*l)))*wt[2];
+                };
+                auto Il0 = I(l0);
+                auto Il1 = I(l1);
+
+                Vector3 ortho = normalize(cross(v0 - p.position, v1 - p.position));
+                Real norm_factor = 1.0 / length(inverse(transpose(m_inv)) * ortho);
+                return norm_factor * max(Il1 - Il0, Real(0)) / (2 * M_PI);
+            }
+        }
+    }
+    return 0;
 }
 
 void initialize_ltc_table(bool use_gpu);
@@ -286,6 +365,8 @@ void sample_secondary_edges(const Scene &scene,
                             const BufferView<Real> &min_roughness,
                             const float *d_rendered_image,
                             const ChannelInfo &channel_info,
+                            const BufferView<int> &bbox_edges_idxs,
+                            const BufferView<Vector3> &bbox_edges_normals,
                             BufferView<SecondaryEdgeRecord> edge_records,
                             BufferView<Ray> rays,
                             BufferView<RayDifferential> &bsdf_ray_differentials,

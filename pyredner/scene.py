@@ -51,10 +51,21 @@ class Scene:
                     current_material_id += 1
                 if obj.light_intensity is not None:
                     current_shape_id = len(shapes)
-                    area_light = pyredner.AreaLight(shape_id = current_shape_id,
-                                                    intensity = obj.light_intensity,
-                                                    two_sided = obj.light_two_sided,
-                                                    directly_visible = obj.directly_visible)
+                    if not obj.polygon_light:
+                        area_light = pyredner.AreaLight(shape_id = current_shape_id,
+                                                        intensity = obj.light_intensity,
+                                                        two_sided = obj.light_two_sided,
+                                                        directly_visible = obj.directly_visible,
+                                                        polygon_light = False,
+                                                        polygon_silhouette = None)
+                    else:
+                        silhouette = pyredner.get_silhouette(obj.indices)
+                        area_light = pyredner.AreaLight(shape_id = current_shape_id,
+                                                        intensity = obj.light_intensity,
+                                                        two_sided = obj.light_two_sided,
+                                                        directly_visible = obj.directly_visible,
+                                                        polygon_light = True,
+                                                        polygon_silhouette = silhouette)
                     area_lights.append(area_light)
                 shape = pyredner.Shape(vertices = obj.vertices,
                                        indices = obj.indices,

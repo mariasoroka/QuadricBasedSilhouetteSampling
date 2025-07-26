@@ -154,6 +154,11 @@ inline Vector3 center(const AABB3 &b) {
     return 0.5f * (b.p_max + b.p_min);
 }
 
+DEVICE
+inline Real get_area(const AABB3 &b) {
+    auto d = Vector3{b.p_max - b.p_min};
+    return d.x * d.y + d.x * d.z + d.z * d.y;
+}
 
 DEVICE
 inline bool intersect(const Sphere &s, const AABB3 &b) {
@@ -307,6 +312,16 @@ inline void intersect_plane(const AABB3 &b, const Vector4 &plane, Vector3 *point
 }
 
 DEVICE
+inline void make_non_degenerate(AABB3 &b) {
+    for (int i = 0; i < 3; i++) {
+        if (b.p_min[i] == b.p_max[i]) {
+            b.p_min[i] -= 1e-6;
+            b.p_max[i] += 1e-6;
+        }
+    }
+}
+
+DEVICE
 inline void init_bbox_edges_and_normals(BufferView<int> bbox_edges_idxs, BufferView<Vector3> bbox_edges_normals){
     bbox_edges_idxs[0] = 0;
     bbox_edges_idxs[1] = 1;
@@ -373,3 +388,104 @@ inline void test_aabb(const AABB3 &b, const Vector4 &plane, ptr<Vector3> points,
 
 std::ostream& operator<<(std::ostream &os, const AABB3 &bounds);
 std::ostream& operator<<(std::ostream &os, const AABB6 &bounds);
+
+DEVICE
+inline void get_bbox_silhouette(const AABB3 &bounds, 
+                                 const Vector3 &p, 
+                                 BufferView<Vector3> bbox_silhouette, 
+                                 int &n_bbox_silhouette) {
+    n_bbox_silhouette = 0;
+    int closest_corner = -1;
+    Real min_dist = infinity<Real>();
+    for(int i = 0; i < 8; i++){
+        Real dist_tmp = distance(corner(bounds, i), p);
+        if (dist_tmp < min_dist){
+            min_dist = dist_tmp;
+            closest_corner = i;
+        }
+    }
+
+    Vector3 closest_corner_dir = corner(bounds, closest_corner);
+    Vector3 closest_corner_dir_rel = corner(bounds, closest_corner) - p;
+    Vector3 e1 = corner(bounds, closest_corner ^ 1) - closest_corner_dir;
+    Vector3 e2 = corner(bounds, closest_corner ^ 2) - closest_corner_dir;
+    Vector3 e3 = corner(bounds, closest_corner ^ 4) - closest_corner_dir;
+    Vector3 dir;
+    Vector3 dir_vert;
+    int sign = dot(e3, cross(e1, e2)) > 0 ? 1 : -1;
+
+    if (dot(closest_corner_dir_rel, e3) > 0){
+        int idx = closest_corner;
+        int idx0, idx1;
+        int counter = 1;
+        for(int j = 0; j < 4; j++){
+            idx0 = idx;
+            idx1 = idx ^ counter;
+            idx = idx1;
+
+            dir = corner(bounds, idx1) - corner(bounds, idx0);
+            dir_vert = corner(bounds, idx0) - p;
+
+            if (sign * dot(dir_vert , cross(e3, dir)) < 0){
+                bbox_silhouette[n_bbox_silhouette] = corner(bounds, idx0);
+                n_bbox_silhouette++;
+            }
+            counter *= 2;
+            counter = counter % 3;
+        }
+    }
+
+    if (dot(closest_corner_dir_rel, e1) > 0){
+        int idx = closest_corner;
+        int idx0, idx1;
+        int counter = 2;
+        for(int j = 0; j < 4; j++){
+            idx0 = idx;
+            idx1 = idx ^ counter;
+            idx = idx1;
+
+            dir = corner(bounds, idx1) - corner(bounds, idx0);
+            dir_vert = corner(bounds, idx0) - p;
+
+            if (sign * dot(dir_vert , cross(e1, dir)) < 0){
+                bbox_silhouette[n_bbox_silhouette] = corner(bounds, idx0);
+                n_bbox_silhouette++;
+            }
+
+            counter *= 2;
+            counter = counter % 6;
+        }
+    }
+
+    if (dot(closest_corner_dir_rel, e2) > 0){
+        int idx = closest_corner;
+        int idx0, idx1;
+        int counter = 4;
+        for(int j = 0; j < 4; j++){
+            idx0 = idx;
+            idx1 = idx ^ counter;
+            idx = idx1;
+
+            dir = corner(bounds, idx1) - corner(bounds, idx0);
+            dir_vert = corner(bounds, idx0) - p;
+
+
+            if (sign * dot(dir_vert , cross(e2, dir)) < 0){
+                bbox_silhouette[n_bbox_silhouette] = corner(bounds, idx0);
+                n_bbox_silhouette++;
+            }
+
+            counter *= 4;
+            counter = counter % 15;
+        }
+    }
+}
+
+DEVICE
+inline int test_get_bbox_silhouette_py(const AABB3 &bounds, 
+                                       const Vector3 &p, 
+                                       ptr<Vector3> bbox_silhouette) {
+    int n_bbox_silhouette = 0;
+    get_bbox_silhouette(bounds, p, BufferView<Vector3>(bbox_silhouette.get_pointer(), 6), n_bbox_silhouette);
+    return n_bbox_silhouette;
+}

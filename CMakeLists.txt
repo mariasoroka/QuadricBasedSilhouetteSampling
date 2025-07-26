@@ -76,6 +76,7 @@ set(SRCS src/aabb.h
          src/pathtracer.h
          src/pathtracer_was.h
          src/pcg_sampler.h
+         src/polygon_clipping.h
          src/primary_contribution.h
          src/primary_intersection.h
          src/ptr.h

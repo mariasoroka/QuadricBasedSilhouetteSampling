@@ -234,10 +234,14 @@ namespace edge_sampling {
             }
         }
     #endif
+        Buffer<int> bbox_edges_idxs(scene.use_gpu, 24);
+        Buffer<Vector3> bbox_edges_normals(scene.use_gpu, 24);
+        init_bbox_edges_and_normals(bbox_edges_idxs.view(0, 24), bbox_edges_normals.view(0, 24));
         scene.use_primary_edge_sampling = options.use_primary_edge_sampling;
         scene.use_secondary_edge_sampling = options.use_secondary_edge_sampling;
 
         
+        scene.use_nee = options.use_nee;
         scene.remove_concave = options.remove_concave;
         scene.make_edge_sampler(options.use_primary_edge_sampling, options.use_secondary_edge_sampling, options.remove_concave);
 
@@ -589,6 +593,8 @@ namespace edge_sampling {
                             min_roughness,
                             d_rendered_image.get(),
                             channel_info,
+                            bbox_edges_idxs.view(0, 24),
+                            bbox_edges_normals.view(0, 24),
                             edge_records,
                             edge_rays,
                             edge_ray_differentials,

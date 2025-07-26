@@ -47,6 +47,7 @@ struct Scene {
     int gpu_index;
     bool use_primary_edge_sampling;
     bool use_secondary_edge_sampling;
+    bool use_nee;
     bool remove_concave;
 
     // For G-buffer rendering with textures of arbitrary number of channels.

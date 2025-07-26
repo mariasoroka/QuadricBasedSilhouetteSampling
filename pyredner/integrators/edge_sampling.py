@@ -20,6 +20,7 @@ class EdgeSamplingIntegrator(Integrator):
                   sample_pixel_center = False,
                   use_primary_edge_sampling = True,
                   use_secondary_edge_sampling = True,
+                  use_nee = False,
                   remove_concave = True
                   ):
 
@@ -33,6 +34,7 @@ class EdgeSamplingIntegrator(Integrator):
         self.sample_pixel_center = sample_pixel_center
         self.use_primary_edge_sampling = use_primary_edge_sampling
         self.use_secondary_edge_sampling = use_secondary_edge_sampling
+        self.use_nee = use_nee
         self.remove_concave = remove_concave
 
         self.timing = False
@@ -108,6 +110,7 @@ class EdgeSamplingIntegrator(Integrator):
                         self.sample_pixel_center,
                         self.use_primary_edge_sampling,
                         use_secondary_edge_sampling,
+                        self.use_nee,
                         self.remove_concave)
 
         if self.timing:

@@ -31,6 +31,9 @@ class Texture:
         self.uv_scale = uv_scale
         self.generate_mipmap()
 
+    def get_mean_value(self):
+        return torch.mean(self._texels)
+
     def generate_mipmap(self):
         texels = self._texels
         if len(texels.shape) >= 2:

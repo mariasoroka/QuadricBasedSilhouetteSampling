@@ -5,24 +5,28 @@
 #include "edge.h"
 #include "parallel.h"
 #include "thrust_utils.h"
+#include "offset_quadric.h"
+#include "solid_angles.h"
 
 #include <thrust/transform_reduce.h>
+ #include <thrust/binary_search.h>
 #include <thrust/sequence.h>
 #include <thrust/fill.h>
 #include <thrust/partition.h>
+#include <thrust/unique.h>
+#include <thrust/extrema.h>
 
 struct edge_partitioner {
     DEVICE bool operator()(int edge_id) const {
-        bool result = is_silhouette(shapes, cam_org, edges[edge_id]);
+        bool result = is_onesided(shapes, edges[edge_id]);
         return result;
     }
 
     const Shape *shapes;
-    Vector3 cam_org;
     const Edge *edges;
 };
 
-struct edge_6d_bounds_computer {
+struct edge_3d_bounds_computer {
     DEVICE void operator()(int idx) {
         const auto &edge = edges[idx];
         // Compute position bound
@@ -39,46 +43,20 @@ struct edge_6d_bounds_computer {
         assert(isfinite(p_min));
         assert(isfinite(p_max));
 
-        // Compute directional bound
-        auto n0 = get_n0(shapes, edge);
-        auto n1 = Vector3{0, 0, 0};
-        if (edge.f1 == -1) {
-            n1 = -n0;
-        } else {
-            n1 = get_n1(shapes, edge);
-        }
-        auto p = 0.5f * (v0 + v1) - cam_org;
-        // plane 0 is n0.x * x + n0.y * y + n0.z * z = dot(p, n0)
-        auto p0d = dot(p, n0);
-        auto p1d = dot(p, n1);
-        // 3D Hough transform, see "Silhouette extraction in hough space", 
-        // Olson and Zhang
-        auto h0 = Vector3{n0.x * p0d, n0.y * p0d, n0.z * p0d};
-        auto h1 = Vector3{n1.x * p1d, n1.y * p1d, n1.z * p1d};
-        auto d_min = Vector3{0, 0, 0};
-        auto d_max = Vector3{0, 0, 0};
-        for (int i = 0; i < 3; i++) {
-            d_min[i] = min(h0[i], h1[i]);
-            d_max[i] = max(h0[i], h1[i]);
-        }
-        assert(isfinite(d_min));
-        assert(isfinite(d_max));
-        edge_aabbs[idx].d_min = d_min;
-        edge_aabbs[idx].d_max = d_max;
     }
 
     const Shape *shapes;
     const Edge *edges;
     const Vector3 cam_org;
-    AABB6 *edge_aabbs;
+    AABB3 *edge_aabbs;
 };
 
 void compute_edge_bounds(const Shape *shapes,
                          const BufferView<Edge> &edges,
                          const Vector3 cam_org,
-                         BufferView<AABB6> edge_aabbs,
+                         BufferView<AABB3> edge_aabbs,
                          bool use_gpu) {
-    parallel_for(edge_6d_bounds_computer{
+    parallel_for(edge_3d_bounds_computer{
                      shapes, edges.begin(), cam_org, edge_aabbs.begin()},
                  edges.size(),
                  use_gpu);
@@ -118,34 +96,11 @@ struct id_to_aabb3 {
         return AABB3{b.p_min, b.p_max};
     }
 
-    const AABB6 *bounds;
+    const AABB3 *bounds;
 };
 
-struct id_to_aabb6 {
-    DEVICE AABB6 operator()(int id) const {
-        return bounds[id];
-    }
-
-    const AABB6 *bounds;
-};
 
 struct union_bounding_box {
-    DEVICE AABB6 operator()(const AABB6 &b0, const AABB6 &b1) const {
-        auto p_min = Vector3{min(b0.p_min[0], b1.p_min[0]),
-                             min(b0.p_min[1], b1.p_min[1]),
-                             min(b0.p_min[2], b1.p_min[2])};
-        auto d_min = Vector3{min(b0.d_min[0], b1.d_min[0]),
-                             min(b0.d_min[1], b1.d_min[1]),
-                             min(b0.d_min[2], b1.d_min[2])};
-        auto p_max = Vector3{max(b0.p_max[0], b1.p_max[0]),
-                             max(b0.p_max[1], b1.p_max[1]),
-                             max(b0.p_max[2], b1.p_max[2])};
-        auto d_max = Vector3{max(b0.d_max[0], b1.d_max[0]),
-                             max(b0.d_max[1], b1.d_max[1]),
-                             max(b0.d_max[2], b1.d_max[2])};
-        return AABB6{p_min, d_min, p_max, d_max};
-    }
-
     DEVICE AABB3 operator()(const AABB3 &b0, const AABB3 &b1) const {
         auto p_min = Vector3{min(b0.p_min[0], b1.p_min[0]),
                              min(b0.p_min[1], b1.p_min[1]),
@@ -163,598 +118,581 @@ struct sum_vec3 {
     }
 };
 
-struct morton_code_3d_computer {
-    DEVICE uint64_t expand_bits(uint64_t x) {
-        // Insert two zero after every bit given a 21-bit integer
-        // https://github.com/leonardo-domingues/atrbvh/blob/master/BVHRT-Core/src/Commons.cuh#L599
-        uint64_t expanded = x;
-        expanded &= 0x1fffff;
-        expanded = (expanded | expanded << 32) & 0x1f00000000ffff;
-        expanded = (expanded | expanded << 16) & 0x1f0000ff0000ff;
-        expanded = (expanded | expanded << 8) & 0x100f00f00f00f00f;
-        expanded = (expanded | expanded << 4) & 0x10c30c30c30c30c3;
-        expanded = (expanded | expanded << 2) & 0x1249249249249249;
-        return expanded;
-    }
-
-    DEVICE uint64_t morton3D(const Vector3 &p) {
-        auto pp = (p - scene_bounds.p_min) / (scene_bounds.p_max - scene_bounds.p_min);
-        for (int i = 0; i < 3; i++) {
-            if (scene_bounds.p_max[i] - scene_bounds.p_min[i] <= 0.f) {
-                pp[i] = 0.5f;
-            }
+struct edge_center_is_inside_bbox {
+    DEVICE inline bool operator()(int idx) {
+        if(inside(bbox, center(edge_bounds[idx]))){
+            return true;
         }
-        auto scale = (1 << 21) - 1;
-        TVector3<uint64_t> pp_i{pp.x * scale, pp.y * scale, pp.z * scale};
-        return (expand_bits(pp_i.x) << 2u) |
-               (expand_bits(pp_i.y) << 1u) |
-               (expand_bits(pp_i.z) << 0u);
+        return false;
     }
-
-    DEVICE void operator()(int idx) {
-        // This might be suboptimal -- should probably use raw edge information directly
-        auto box = convert_aabb<AABB3>(edge_aabbs[edge_ids[idx]]);
-        morton_codes[idx] = morton3D(0.5f * (box.p_min + box.p_max));
-    }
-
-    const AABB3 scene_bounds;
-    const AABB6 *edge_aabbs;
-    const int *edge_ids;
-    uint64_t *morton_codes;
+    AABB3 bbox;
+    const AABB3 *edge_bounds;
 };
 
-void compute_morton_codes(const AABB3 &scene_bounds,
-                          const BufferView<AABB6> &edge_bounds,
-                          const BufferView<int> &edge_ids,
-                          BufferView<uint64_t> morton_codes,
-                          bool use_gpu) {
-    parallel_for(morton_code_3d_computer{
-                     scene_bounds, edge_bounds.begin(), edge_ids.begin(), morton_codes.begin()},
-                 morton_codes.size(),
-                 use_gpu);
-}
-
-struct morton_code_6d_computer {
-    // For 6D Morton code, insert 5 zeros before each bit of a 10-bit integer
-    // I'm doing this in a very slow way by manipulating each bit.
-    // This is not the bottleneck anyway and I want readability.
-    DEVICE uint64_t expand_bits(uint64_t x) {
-        constexpr uint64_t mask = 0x1u;
-        // We start from LSB (bit 63)
-        auto result = (x & (mask << 0u));
-        result |= ((x & (mask << 1u)) << 5u);
-        result |= ((x & (mask << 2u)) << 10u);
-        result |= ((x & (mask << 3u)) << 15u);
-        result |= ((x & (mask << 4u)) << 20u);
-        result |= ((x & (mask << 5u)) << 25u);
-        result |= ((x & (mask << 6u)) << 30u);
-        result |= ((x & (mask << 7u)) << 35u);
-        result |= ((x & (mask << 8u)) << 40u);
-        result |= ((x & (mask << 9u)) << 45u);
-        return result;
+struct StackItem{
+    AABB3 bounds; // Bounding box of the node
+    int node_idx;
+    int start_idx;
+    int end_idx;
+    bool build_dual;
+    bool rejectable; // If false, the node can not be rejected. See Appendix B from "Quadric-Based Silhouette Sampling for Differentiable Rendering"
+    Vector4 D; // The offset quadric vector.
+    AABB3 dual_bounds;
+    QuadricPair quadric_pair;
+    Matrix4x4 m; // Orthogonal basis A from Sec. 3.2.
+    Matrix4x4 fitted_matrix; // Matrix for Qf
+    int size(){
+        return end_idx - start_idx;
     }
-
-    DEVICE uint64_t morton6D(const Vector3 &p, const Vector3 &d) {
-        Vector3 pp = (p - scene_bounds.p_min) / (scene_bounds.p_max - scene_bounds.p_min);
-        Vector3 dd = (d - scene_bounds.d_min) / (scene_bounds.d_max - scene_bounds.d_min);
-        for (int i = 0; i < 3; i++) {
-            if (scene_bounds.p_max[i] - scene_bounds.p_min[i] <= 0.f) {
-                pp[i] = 0.5f;
-            }
-            if (scene_bounds.d_max[i] - scene_bounds.d_min[i] <= 0.f) {
-                dd[i] = 0.5f;
-            }
-        }
-        TVector3<uint64_t> pp_i{pp.x * 1023, pp.y * 1023, pp.z * 1023};
-        TVector3<uint64_t> dd_i{dd.x * 1023, dd.y * 1023, dd.z * 1023};
-        return (expand_bits(pp_i.x) << 5u) |
-               (expand_bits(pp_i.y) << 4u) |
-               (expand_bits(pp_i.z) << 3u) |
-               (expand_bits(dd_i.x) << 2u) |
-               (expand_bits(dd_i.y) << 1u) |
-               (expand_bits(dd_i.z) << 0u);
-    }
-
-    DEVICE void operator()(int idx) {
-        // This might be suboptimal -- should probably use raw edge information directly
-        const auto &box = edge_aabbs[edge_ids[idx]];
-        morton_codes[idx] = morton6D(0.5f * (box.p_min + box.p_max),
-                                     0.5f * (box.d_min + box.d_max));
-    }
-
-    const AABB6 scene_bounds;
-    const AABB6 *edge_aabbs;
-    const int *edge_ids;
-    uint64_t *morton_codes;
 };
 
-void compute_morton_codes(const AABB6 &scene_bounds,
-                          const BufferView<AABB6> &edge_aabbs,
-                          const BufferView<int> &edge_ids,
-                          BufferView<uint64_t> morton_codes,
-                          bool use_gpu) {
-    parallel_for(morton_code_6d_computer{
-        scene_bounds, edge_aabbs.begin(), edge_ids.begin(), morton_codes.begin()},
-                 morton_codes.size(),
-                 use_gpu);
-}
+struct NodeSplit{
+    StackItem child_0;
+    StackItem child_1;
+};
 
-template <typename BVHNodeType>
-struct radix_tree_builder {
-    // https://github.com/henrikdahlberg/GPUPathTracer/blob/master/Source/Core/BVHConstruction.cu#L62
-    DEVICE int longest_common_prefix(int idx0, int idx1) {
-        if (idx0 < 0 || idx0 >= num_primitives || idx1 < 0 || idx1 >= num_primitives) {
-            return -1;
-        }
-        auto mc0 = morton_codes[idx0];
-        auto mc1 = morton_codes[idx1];
-        if (mc0 == mc1) {
-            // Break even when the Morton codes are the same
-            auto id0 = (uint64_t)edge_ids[idx0];
-            auto id1 = (uint64_t)edge_ids[idx1];
-            return clz(mc0 ^ mc1) + clz(id0 ^ id1);
+struct ShapeFacePair{
+    int shape_id;
+    int face_id;
+};
+
+struct ShapeVertexPair{
+    int shape_id;
+    int vertex_id;
+};
+
+struct dual_planes_idxs_assigner{
+    DEVICE void operator()(int idx){
+        auto edge = edges[edge_ids_local[idx + start_idx]];
+        dual_planes_idxs[2 * idx] = ShapeFacePair{edge.shape_id, edge.f0};
+        dual_planes_idxs[2 * idx + 1] = ShapeFacePair{edge.shape_id, edge.f1};
+    }
+    const Edge *edges;
+    int start_idx;
+    ShapeFacePair *dual_planes_idxs;
+    int *edge_ids_local;
+};
+
+struct dual_planes_from_idx{
+    DEVICE void operator()(int idx){
+        const auto &shape = *(shapes + dual_planes_idxs[idx].shape_id);
+        Vector3 normal = get_normal(shape, dual_planes_idxs[idx].face_id);
+        auto indices = get_indices(shape, dual_planes_idxs[idx].face_id);
+        Vector3 point = get_vertex(shape, indices[0]);
+        dual_planes[idx] = Vector4{normal.x, normal.y, normal.z, -dot(normal, point)};
+    }
+    const Shape *shapes;
+    const ShapeFacePair *dual_planes_idxs;
+    Vector4 *dual_planes;
+};
+
+// Compute \lambda(q) for each q in the set of dual planes. See Sec. 4.2 from "Quadric-Based Silhouette Sampling for Differentiable Rendering"
+struct compute_face_lambda{
+    DEVICE void operator()(int idx){
+        lambdas[idx] = - dot(dual_planes[idx], fitted_matrix * dual_planes[idx]) / dot(dual_planes[idx], offset_matrix * dual_planes[idx]);
+    }
+    Vector4 *dual_planes;
+    Matrix4x4 offset_matrix;
+    Matrix4x4 fitted_matrix;
+    Real *lambdas;
+};
+
+// Compute \lambda^*(e) for each edge e in the set of edges. See Sec. 4.2 from "Quadric-Based Silhouette Sampling for Differentiable Rendering"
+struct compute_edge_lambdas{
+    DEVICE void operator()(int idx){
+        const Edge edge = edges[edge_ids_local[idx + start_idx]];
+        const Shape &shape = shapes[edge.shape_id];
+        if (edge.f0 == -1 || edge.f1 == -1) {
+            offset_lambdas[idx] = 0;
+            return;
         }
         else {
-            return clz(mc0 ^ mc1);
-        }
-    }
+            Vector3 normal_0 = get_normal(shape, edge.f0);
+            Vector3 normal_1 = get_normal(shape, edge.f1);
+            auto indices_0 = get_indices(shape, edge.f0);
+            auto indices_1 = get_indices(shape, edge.f1);
+            Vector3 vertex_0 = get_vertex(shape, indices_0[0]);
+            Vector3 vertex_1 = get_vertex(shape, indices_1[0]);
+            Vector4 plane_0{normal_0.x, normal_0.y, normal_0.z, -dot(normal_0, vertex_0)};
+            Vector4 plane_1{normal_1.x, normal_1.y, normal_1.z, -dot(normal_1, vertex_1)};
 
-    DEVICE void operator()(int idx) {
-        // Mostly adapted from 
-        // https://github.com/henrikdahlberg/GPUPathTracer/blob/master/Source/Core/BVHConstruction.cu#L161
-        // Also see Figure 4 in
-        // https://devblogs.nvidia.com/wp-content/uploads/2012/11/karras2012hpg_paper.pdf
+            Real Qf01 = dot(plane_0, fitted_matrix * plane_1);
+            Real Qf00 = dot(plane_0, fitted_matrix * plane_0);
+            Real Qf11 = dot(plane_1, fitted_matrix * plane_1);
+            Real Qo01 = dot(plane_0, offset_matrix * plane_1);
+            Real Qo00 = dot(plane_0, offset_matrix * plane_0);
+            Real Qo11 = dot(plane_1, offset_matrix * plane_1);
 
-        if (idx >= num_primitives - 1) {
-            if (num_primitives == 1) {
-                // Special case: if there is only one primitive, set it as the root
-                nodes[0] = leaves[0];
+            Real numerator =  Qf01 * Qf01 - Qf00 * Qf11;
+
+            if(std::abs(numerator) < 1e-15){
+                offset_lambdas[idx] = 0;
+                return;
             }
-            return;
-        }
 
-        // Compute upper bound for the length of the range
-        auto d = longest_common_prefix(idx, idx + 1) -
-                 longest_common_prefix(idx, idx - 1) >= 0 ? 1 : -1;
-        auto delta_min = longest_common_prefix(idx, idx - d);
-        auto lmax = 2;
-        while (longest_common_prefix(idx, idx + lmax * d) > delta_min) {
-            lmax *= 2;
-        }
-        // Find the other end using binary search
-        auto l = 0;
-        auto divider = 2;
-        for (int t = lmax / divider; t >= 1;) {
-            if (longest_common_prefix(idx, idx + (l + t) * d) > delta_min) {
-                l += t;
+            Real denominator = 2 * Qf01 * Qo01 - Qf00 * Qo11 - Qf11 * Qo00;
+            Real lam = - numerator / denominator;
+
+            Real sign_check_1 = Qf01 + lam * Qo01;
+            Real sign_check_2 = (Qf00 + Qf11 - 2 * Qf01) + lam * (Qo00 + Qo11 - 2 * Qo01);
+
+            if(sign_check_1 * sign_check_2 < 0){
+                offset_lambdas[idx] = lam;
             }
-            if (t == 1) {
-                break;
-            }
-            divider *= 2;
-            t = lmax / divider;
-        }
-        auto j = idx + l * d;
-        // Find the split position using binary search
-        auto delta_node = longest_common_prefix(idx, j);
-        auto s = 0;
-        divider = 2;
-        for (int t = (l + (divider - 1)) / divider; t >= 1;) {
-            if (longest_common_prefix(idx, idx + (s + t) * d) > delta_node) {
-                s += t;
-            }
-            if (t == 1) {
-                break;
-            }
-            divider *= 2;
-            t = (l + (divider - 1)) / divider;
-        }
-        auto gamma = idx + s * d + min(d, 0);
-        assert(gamma >= 0 && gamma + 1 < num_primitives);
-        auto &node = nodes[idx];
-        if (min(idx, j) == gamma) {
-            node.children[0] = &leaves[gamma];
-            leaves[gamma].parent = &node;
-        } else {
-            node.children[0] = &nodes[gamma];
-            nodes[gamma].parent = &node;
-        }
-        if (max(idx, j) == gamma + 1) {
-            node.children[1] = &leaves[gamma + 1];
-            leaves[gamma + 1].parent = &node;
-        } else {
-            node.children[1] = &nodes[gamma + 1];
-            nodes[gamma + 1].parent = &node;
-        }
-    }
-
-    const uint64_t *morton_codes;
-    const int *edge_ids;
-    const int num_primitives;
-    BVHNodeType *nodes;
-    BVHNodeType *leaves;
-};
-
-template <typename BVHNodeType>
-void build_radix_tree(const BufferView<uint64_t> &morton_codes,
-                      const BufferView<int> &edge_ids,
-                      BufferView<BVHNodeType> nodes,
-                      BufferView<BVHNodeType> leaves,
-                      bool use_gpu) {
-    parallel_for(radix_tree_builder<BVHNodeType>{
-        morton_codes.begin(), edge_ids.begin(),
-            morton_codes.size(), nodes.begin(), leaves.begin()},
-        morton_codes.size(),
-        use_gpu);
-}
-
-template <typename BVHNodeType>
-struct bvh_computer {
-    DEVICE void operator()(int idx) {
-        auto edge_id = edge_ids[idx];
-        assert(edge_id >= 0 && edge_id < num_edges);
-        const auto &edge = edges[edge_id];
-        auto leaf = &leaves[idx];
-        leaf->bounds = convert_aabb<decltype(BVHNodeType::bounds)>(bounds[edge_id]);
-        // length * (pi - dihedral angle)
-        auto v0 = get_v0(shapes, edge);
-        auto v1 = get_v1(shapes, edge);
-        auto exterior_dihedral = compute_exterior_dihedral_angle(shapes, edge);
-        leaf->weighted_total_length = distance(v0, v1) * exterior_dihedral;
-        leaf->edge_id = edge_ids[idx];
-
-        // Trace from leaf to root and merge bounding boxes & length
-        auto current = leaf->parent;
-        auto node_idx = current - nodes;
-        if (current != nullptr) {
-            while(true) {
-                assert(node_idx >= 0 && node_idx < num_leaves);
-                auto res = atomic_increment(node_counters + node_idx);
-                if (res == 1) {
-                    // Terminate the first thread entering this node to avoid duplicate computation
-                    // It is important to terminate the first not the second so we ensure all children
-                    // are processed
-                    return;
-                }
-                auto bbox = current->children[0]->bounds;
-                auto weighted_length = current->children[0]->weighted_total_length;
-                for (int i = 1; i < 2; i++) {
-                    bbox = merge(bbox, current->children[i]->bounds);
-                    weighted_length += current->children[i]->weighted_total_length;
-                }
-                current->bounds = bbox;
-                current->weighted_total_length = weighted_length;
-                if (current->parent == nullptr) {
-                    return;
-                }
-                current = current->parent;
-                node_idx = current - nodes;
+            else{
+                offset_lambdas[idx] = 0;
             }
         }
     }
-
     const Shape *shapes;
-    const Edge *edges;
-    const int num_edges;
-    const int *edge_ids;
-    const AABB6 *bounds;
-    const int num_leaves;
-    int *node_counters;
-    BVHNodeType *nodes;
-    BVHNodeType *leaves;
+    const Edge* edges;
+    const int* edge_ids_local;
+    int start_idx;
+    Matrix4x4 offset_matrix;
+    Matrix4x4 fitted_matrix;
+    Real *offset_lambdas;
 };
 
-template <typename BVHNodeType>
-void compute_bvh(const BufferView<Shape> &shapes,
-                 const BufferView<Edge> &edges,
-                 const BufferView<int> &edge_ids,
-                 const BufferView<AABB6> &bounds,
-                 BufferView<int> node_counters,
-                 BufferView<BVHNodeType> nodes,
-                 BufferView<BVHNodeType> leaves,
-                 bool use_gpu) {
-    assert(leaves.size() == edge_ids.size());
-    parallel_for(bvh_computer<BVHNodeType>{
-            shapes.begin(), edges.begin(), edges.size(), edge_ids.begin(), bounds.begin(), leaves.size(),
-            node_counters.begin(), nodes.begin(), leaves.begin()},
-        leaves.size(),
-        use_gpu);
+void compute_stack_item(StackItem &node,
+                        const BufferView<Shape> &shapes,
+                        const BufferView<Edge> &edges,
+                        const Buffer<AABB3> &edge_bounds,
+                        int start_idx,
+                        int end_idx,
+                        Buffer<int> &edge_ids_local,
+                        bool build_dual,
+                        int min_points_for_fitting,
+                        const Matrix4x4 &parent_fitted_matrix,
+                        bool use_gpu) {
+    node = StackItem{AABB3(), 
+                     0, 
+                     start_idx, 
+                     end_idx, 
+                     build_dual, 
+                     false, 
+                     Vector4(), 
+                     AABB3(), 
+                     QuadricPair(), 
+                     Matrix4x4(), 
+                     Matrix4x4()};
+
+    node.bounds = DISPATCH(use_gpu,
+                        thrust::transform_reduce, edge_ids_local.begin() + start_idx,
+                        edge_ids_local.begin() + end_idx,
+                        id_to_aabb3{edge_bounds.begin()}, AABB3(), union_bounding_box{});  
+    make_non_degenerate(node.bounds); 
+
+    if (build_dual) {
+
+        // Get shape-face pain for each edge
+        Buffer<ShapeFacePair> dual_planes_idxs(use_gpu, 2 * (end_idx - start_idx));
+        DISPATCH(use_gpu, thrust::fill, dual_planes_idxs.begin(), dual_planes_idxs.end(), ShapeFacePair{-1, -1});
+        parallel_for(dual_planes_idxs_assigner{edges.begin(), start_idx, dual_planes_idxs.begin(), edge_ids_local.begin()},
+                     end_idx - start_idx, use_gpu);
+
+        // Compute dual planes for each edge
+        Buffer<Vector4> dual_planes(use_gpu, 2 * (end_idx - start_idx));
+        parallel_for(dual_planes_from_idx{shapes.begin(), dual_planes_idxs.begin(), dual_planes.begin()},
+                    2 * (end_idx - start_idx), use_gpu);
+
+        // Remove duplicate planes
+        DISPATCH(use_gpu, thrust::sort, dual_planes.begin(), dual_planes.end(), [](const Vector4 &a, const Vector4 &b){
+                                        if (a < b) {
+                                            return true;
+                                        }
+                                        return false;
+                                    });
+        auto end_it = DISPATCH(use_gpu, thrust::unique, dual_planes.begin(), dual_planes.end(), [](const Vector4 &a, const Vector4 &b){
+                                        return a == b;
+                                    });
+
+        int n_dual_planes = end_it - dual_planes.begin();
+
+        Quadric fitted;
+        if (n_dual_planes >= min_points_for_fitting) {
+            fitted = fit_quadric(dual_planes.view(0, n_dual_planes));
+        }
+        // If there are not enough planes to fit a quadric, use the parent fitted quadric
+        else {
+            fitted = Quadric(parent_fitted_matrix);
+        }
+        node.fitted_matrix = fitted.matrix;
+
+        // Find vector D for the offset quadric. See Sec. 4.4 of "Quadric-Based Silhouette Sampling for Differentiable Rendering".
+        // The same vector is used as vector Z in Sec. 3.2.
+        Vector4 D = find_offset_quadric_vector(use_gpu, dual_planes.view(0, n_dual_planes));
+
+        if (length(D) > 0) {
+            node.rejectable = true;
+            node.D = D;
+
+            // Compute orthogonal basis A from Sec. 3.2.
+            Matrix4x4 basis = find_basis(D / length(D));
+            node.m = basis;
+
+            // Project dual planes to compute the set \mathcal{W}'.
+            Buffer<Vector3> proj_dual_planes(use_gpu, n_dual_planes);
+            DISPATCH(use_gpu, thrust::transform, dual_planes.begin(), end_it, 
+                                proj_dual_planes.begin(), [&basis](const Vector4 &plane){
+                                        Vector4 transformed_plane = transpose(basis) * plane;
+                                        transformed_plane /= transformed_plane.w;
+                                        return Vector3(transformed_plane.x, transformed_plane.y, transformed_plane.z);
+                                    });
+
+            // Compute the dual bounds of the node.
+            AABB3 dual_bounds = DISPATCH(use_gpu, thrust::transform_reduce, proj_dual_planes.begin(), proj_dual_planes.end(),
+                                        [](const Vector3 &v){return AABB3(v, v);}, AABB3(), union_bounding_box{});
+            node.dual_bounds = dual_bounds;
+            make_non_degenerate(node.dual_bounds);
+
+            // Compute the offset quadric. Qo = D * D^T.
+            Matrix4x4 offset_matrix = outer_product(D);
+
+            // Compute the set \Lambda from Sec. 4.2 of "Quadric-Based Silhouette Sampling for Differentiable Rendering".
+            int n_edges = end_idx - start_idx;
+            int n_faces = n_dual_planes;
+            Buffer<Real> lambdas(use_gpu, n_faces + n_edges);
+            DISPATCH(use_gpu, thrust::fill, lambdas.begin(), lambdas.end(), 0);
+            parallel_for(compute_face_lambda{dual_planes.begin(), 
+                                             offset_matrix, 
+                                             fitted.matrix, 
+                                             lambdas.begin()}, 
+                                             n_faces, use_gpu);
+            parallel_for(compute_edge_lambdas{shapes.begin(), 
+                                              edges.begin(), 
+                                              edge_ids_local.begin(), 
+                                              start_idx, offset_matrix, 
+                                              fitted.matrix, 
+                                              lambdas.begin() + n_faces}, 
+                                              n_edges, use_gpu);
+            auto min_lambda_itr = DISPATCH(use_gpu, thrust::min_element, lambdas.begin(), lambdas.end());
+            auto max_lambda_itr = DISPATCH(use_gpu, thrust::max_element, lambdas.begin(), lambdas.end());
+
+            // Compute the bounding quadrics
+            Matrix4x4 m_1 = fitted.matrix + *(min_lambda_itr) * offset_matrix;
+            Matrix4x4 m_2 = fitted.matrix + *(max_lambda_itr) * offset_matrix;
+            node.quadric_pair.quadric1 = Quadric(m_1);
+            node.quadric_pair.quadric2 = Quadric(m_2);
+        }
+        else{
+            node.rejectable = false;
+        }
+    }            
 }
 
-template <typename BVHNodeType>
-struct bvh_optimizer {
-    // Adapted from
-    // https://github.com/andrewwuan/smallpt-parallel-bvh-gpu/blob/master/gpu.cu
+// Compute SAH splitting costs
+Buffer<Real> get_costs(StackItem &node_to_split,
+                       int num_buckets,
+                       int dim,
+                       const BufferView<Shape> &shapes,
+                       const BufferView<Edge> &edges,
+                       const Buffer<AABB3> &edge_bounds,
+                       Buffer<int> &edge_ids_local,
+                       bool use_gpu){
 
-    // SAH constants
-    static constexpr auto Ci = Real(1);
-    static constexpr auto Ct = Real(1);
+    Buffer<Real> costs(use_gpu, num_buckets);
+    auto d = node_to_split.bounds.p_max - node_to_split.bounds.p_min;
 
-    DEVICE Real surface_area(const AABB3 &bounds) {
-        auto d = bounds.p_max - bounds.p_min;
-        return 2 * (d.x * d.y + d.x * d.z + d.y * d.z);
+    for(int idx = 0; idx < num_buckets; idx++){
+        auto child_box_0 = node_to_split.bounds;
+        auto child_box_1 = node_to_split.bounds;
+        child_box_0.p_max[dim] = node_to_split.bounds.p_min[dim] + (idx + 1) * d[dim] / (num_buckets + 1);
+        child_box_1.p_min[dim] = node_to_split.bounds.p_min[dim] + (idx + 1) * d[dim] / (num_buckets + 1);
+
+        int split_loc = DISPATCH(use_gpu, thrust::partition, edge_ids_local.begin() + node_to_split.start_idx, edge_ids_local.begin() + node_to_split.end_idx,
+                            edge_center_is_inside_bbox{child_box_0, edge_bounds.begin()}) - edge_ids_local.begin();
+
+        if(split_loc == node_to_split.start_idx || split_loc == node_to_split.end_idx) {
+            costs[idx] = infinity<Real>(); 
+        }
+        else{
+            AABB3 child_box_0_new = DISPATCH(use_gpu, thrust::transform_reduce, edge_ids_local.begin() + node_to_split.start_idx, edge_ids_local.begin() + split_loc,
+                                            id_to_aabb3{edge_bounds.begin()}, AABB3(), union_bounding_box{});
+            AABB3 child_box_1_new = DISPATCH(use_gpu, thrust::transform_reduce, edge_ids_local.begin() + split_loc, edge_ids_local.begin() + node_to_split.end_idx,
+                                            id_to_aabb3{edge_bounds.begin()}, AABB3(), union_bounding_box{});
+            costs[idx] = get_area(child_box_0_new) * (split_loc - node_to_split.start_idx) + get_area(child_box_1_new) * (node_to_split.end_idx - split_loc);
+        }
     }
+    return costs;
+}
 
-    DEVICE Real surface_area(const AABB6 &bounds) {
-        auto dp = bounds.p_max - bounds.p_min;
-        auto dd = bounds.d_max - bounds.d_min;
-        return 2 * ((dp.x * dp.y + dp.x * dp.z + dp.y * dp.z) +
-                    (dd.x * dd.y + dd.x * dd.z + dd.y * dd.z));
+NodeSplit split(StackItem &node_to_split,
+                const BufferView<Shape> &shapes,
+                const BufferView<Edge> &edges,
+                const Buffer<AABB3> &edge_bounds,
+                Buffer<int> &edge_ids_local,
+                int min_points_for_fitting,
+                bool use_gpu){
+    Real best_cost = infinity<Real>();
+
+    int split_loc = 0;
+    if (node_to_split.end_idx - node_to_split.start_idx <= 4) {
+        split_loc = (node_to_split.start_idx + node_to_split.end_idx) / 2;
     }
+    else {
+        auto d = node_to_split.bounds.p_max - node_to_split.bounds.p_min;
+        int dim = argmax(d);
 
-    DEVICE Real compute_total_area(int n,
-                                   BVHNodeType **leaves,
-                                   uint32_t s) {
-        decltype(BVHNodeType::bounds) bounds = leaves[0]->bounds;
-        for (int i = 1; i < n; i++) {
-            if (((s >> i) & 1) == 1) {
-                bounds = merge(bounds, leaves[i]->bounds);
+        int num_buckets = 10;
+        Buffer<Real> costs = get_costs(node_to_split, 
+                                       num_buckets, 
+                                       dim, 
+                                       shapes, 
+                                       edges, 
+                                       edge_bounds, 
+                                       edge_ids_local, 
+                                       use_gpu);
+
+        int best_cut = 0;
+        for(int i = 0; i < num_buckets; i++){
+            if(costs[i] < best_cost){
+                best_cost = costs[i];
+                best_cut = i;
             }
         }
-        return surface_area(bounds);
+
+        auto child_box_0 = node_to_split.bounds;
+        auto child_box_1 = node_to_split.bounds;
+
+        child_box_0.p_max[dim] = node_to_split.bounds.p_min[dim] + (best_cut + 1) * d[dim] / (num_buckets + 1);
+        child_box_1.p_min[dim] = node_to_split.bounds.p_min[dim] + (best_cut + 1) * d[dim] / (num_buckets + 1);
+
+        split_loc = DISPATCH(use_gpu, thrust::partition, edge_ids_local.begin() + node_to_split.start_idx, 
+                             edge_ids_local.begin() + node_to_split.end_idx,
+                             edge_center_is_inside_bbox{child_box_0, edge_bounds.begin()}) - edge_ids_local.begin();
+
+        if(split_loc == node_to_split.start_idx || split_loc == node_to_split.end_idx) {
+            split_loc = (node_to_split.start_idx + node_to_split.end_idx) / 2;
+        }
     }
 
-    DEVICE void calculate_optimal_treelet(int n,
-                                          BVHNodeType **leaves,
-                                          uint8_t *p_opt) {
-        // Algorithm 2 in Karras et al.
-        auto num_subsets = (0x1 << n) - 1;
-        assert(num_subsets < 128);
-        // TODO: move the following two arrays into shared memory
-        Real a[128];
-        Real c_opt[128];
-        // Total cost of each subset
-        for (uint32_t s = 1; s <= (uint32_t)num_subsets; s++) {
-            a[s] = compute_total_area(n, leaves, s);
-        }
-        // Costs of leaves
-        for (uint32_t i = 0; i < (uint32_t)n; i++) {
-            c_opt[(0x1 << i)] = leaves[i]->cost;
-        }
-        // Optimize every subsets of leaves
-        for (uint32_t k = 2; k <= (uint32_t)n; k++) {
-            for (uint32_t s = 1; s <= (uint32_t)num_subsets; s++) {
-                if (popc(s) == (int)k) {
-                    // Try each way of partitioning the leaves
-                    auto c_s = infinity<Real>();
-                    auto p_s = uint32_t(0);
-                    auto d = (s - 1u) & s;
-                    auto p = (-d) & s;
-                    do {
-                        auto c = c_opt[p] + c_opt[s ^ p];
-                        if (c < c_s) {
-                            c_s = c;
-                            p_s = p;
-                        }
-                        p = (p - d) & s;
-                    } while (p != 0);
-                    // SAH
-                    c_opt[s] = Ci * a[s] + c_s;
-                    p_opt[s] = p_s;
+    NodeSplit result;
+    compute_stack_item(result.child_0, shapes, edges, edge_bounds, node_to_split.start_idx, split_loc, edge_ids_local, 
+                        node_to_split.build_dual, min_points_for_fitting, node_to_split.fitted_matrix, use_gpu);
+    compute_stack_item(result.child_1, shapes, edges, edge_bounds, split_loc, node_to_split.end_idx, edge_ids_local, 
+                        node_to_split.build_dual, min_points_for_fitting, node_to_split.fitted_matrix, use_gpu);
+    return result;
+}
+
+
+int build_tree(const AABB3 &scene_bounds,
+                const BufferView<Shape> &shapes,
+                const BufferView<Edge> &edges,
+                const Buffer<AABB3> &edge_bounds,
+                const BufferView<int> &edge_ids,
+                Buffer<BVHNode> &nodes,
+                Buffer<BVHNode> &leaves,
+                bool build_dual,
+                int max_edges_per_leaf,
+                int min_points_for_fitting,
+                bool use_gpu) {
+
+    int buffer_size = 200;
+    StackItem buffer[buffer_size];
+    StackItem *stack_ptr = &buffer[0];
+
+    int nodes_counter = 0;
+    int leaves_counter = 0;
+
+    Buffer<int> edge_ids_local(use_gpu, edge_ids.size());
+    DISPATCH(use_gpu, thrust::copy, edge_ids.begin(), edge_ids.end(), edge_ids_local.begin());
+    DISPATCH(use_gpu, thrust::sort,  edge_ids_local.begin(),  edge_ids_local.end(), 
+            [&](const int i, const int j) {return edges[i].shape_id < edges[j].shape_id;});
+
+    Buffer<int> shape_ids_local(use_gpu, edge_ids.size());
+    DISPATCH(use_gpu, thrust::transform, edge_ids_local.begin(),  edge_ids_local.end(), shape_ids_local.begin(),
+                [&](const int i){return edges[i].shape_id; });
+
+    // Build a separate hierarchy for each shape
+    int n_roots = 0;
+    for (int i = 0; i < shapes.size(); i++) {
+        auto range = DISPATCH(use_gpu, thrust::equal_range, shape_ids_local.begin(), shape_ids_local.end(), i);
+        if (range.first != range.second) {
+            StackItem object_root;
+            compute_stack_item(object_root, shapes, edges, edge_bounds, range.first - shape_ids_local.begin(), range.second - shape_ids_local.begin(), edge_ids_local, 
+                    build_dual, min_points_for_fitting, Matrix4x4(), use_gpu);
+
+            auto children = split(object_root, 
+                                  shapes, 
+                                  edges, 
+                                  edge_bounds, 
+                                  edge_ids_local, 
+                                  min_points_for_fitting, 
+                                  use_gpu);
+
+            StackItem grandchildren[4];
+            int n_grandchildren = 0;
+            if (children.child_0.end_idx - children.child_0.start_idx <= max_edges_per_leaf && children.child_0.end_idx - children.child_0.start_idx > 0) {
+                grandchildren[0] = children.child_0;
+                n_grandchildren = 1;
+            }
+            else {
+                auto grandchildren_0 = split(children.child_0, shapes, edges, edge_bounds, edge_ids_local, min_points_for_fitting, use_gpu);
+                grandchildren[0] = grandchildren_0.child_0;
+                grandchildren[1] = grandchildren_0.child_1;
+                n_grandchildren = 2;
+            }
+
+            if (children.child_1.end_idx - children.child_1.start_idx <= max_edges_per_leaf && children.child_1.end_idx - children.child_1.start_idx > 0) {
+                grandchildren[n_grandchildren] = children.child_1;
+                n_grandchildren++;
+            }
+            else {
+                auto grandchildren_1 = split(children.child_1, shapes, edges, edge_bounds, edge_ids_local, min_points_for_fitting, use_gpu);
+                grandchildren[n_grandchildren + 0] = grandchildren_1.child_0;
+                grandchildren[n_grandchildren + 1] = grandchildren_1.child_1;
+                n_grandchildren += 2;
+            }
+
+            for(int j = 0; j < n_grandchildren; j++){
+                auto child = grandchildren[j];
+                nodes[n_roots].bounds = child.bounds;
+                nodes[n_roots].is_leaf = false;
+                
+                if (build_dual) {
+                    nodes[n_roots].rejectable = child.rejectable;
+                    nodes[n_roots].D = child.D;
+                    nodes[n_roots].dual_bounds = child.dual_bounds;
+                    nodes[n_roots].m = child.m;
+                    nodes[n_roots].quadric_pair = child.quadric_pair;
                 }
+                
+                child.node_idx = n_roots;
+                n_roots++;
+                *stack_ptr++ = child;
             }
         }
     }
+    nodes_counter = n_roots;
 
-    DEVICE void propagate_cost(BVHNodeType *root,
-                               BVHNodeType **leaves,
-                               int num_leaves) {
-        for (int i = 0; i < num_leaves; i++) {
-            auto current = leaves[i];
-            while (current != root) {
-                if (current->cost < 0) {
-                    if (current->children[0]->cost >= 0 &&
-                            current->children[1]->cost >= 0) {
-                        current->bounds =
-                            merge(current->children[0]->bounds,
-                                  current->children[1]->bounds);
-                        current->weighted_total_length =
-                            current->children[0]->weighted_total_length +
-                            current->children[1]->weighted_total_length;
-                        current->cost = Ci * surface_area(current->bounds) +
-                            current->children[0]->cost + current->children[1]->cost;
-                    } else {
-                        break;
-                    }
+    while(stack_ptr != &buffer[0]){
+        assert(stack_ptr > &buffer[0] && stack_ptr < &buffer[buffer_size]);
+
+        StackItem node_to_split = *--stack_ptr;
+        auto children = split(node_to_split, shapes, edges, edge_bounds, edge_ids_local, min_points_for_fitting, use_gpu);
+
+        StackItem grandchildren[4];
+        int n_grandchildren = 0;
+        if (children.child_0.end_idx - children.child_0.start_idx <= max_edges_per_leaf && children.child_0.end_idx - children.child_0.start_idx > 0) {
+            grandchildren[0] = children.child_0;
+            n_grandchildren = 1;
+        }
+        else {
+            auto grandchildren_0 = split(children.child_0, shapes, edges, edge_bounds, edge_ids_local, min_points_for_fitting, use_gpu);
+            grandchildren[0] = grandchildren_0.child_0;
+            grandchildren[1] = grandchildren_0.child_1;
+            n_grandchildren = 2;
+        }
+
+        if (children.child_1.end_idx - children.child_1.start_idx <= max_edges_per_leaf && children.child_1.end_idx - children.child_1.start_idx > 0) {
+            grandchildren[n_grandchildren] = children.child_1;
+            n_grandchildren++;
+        }
+        else {
+            auto grandchildren_1 = split(children.child_1, shapes, edges, edge_bounds, edge_ids_local, min_points_for_fitting, use_gpu);
+            grandchildren[n_grandchildren + 0] = grandchildren_1.child_0;
+            grandchildren[n_grandchildren + 1] = grandchildren_1.child_1;
+            n_grandchildren += 2;
+        }
+
+        int children_counter = 0;
+        for(int i = 0; i < n_grandchildren; i++){
+            auto child = grandchildren[i];
+            // If the node has more than max_edges_per_leaf edges, it is a non-leaf node
+            if(child.end_idx - child.start_idx > max_edges_per_leaf){
+                nodes[nodes_counter].bounds = child.bounds;
+                nodes[nodes_counter].is_leaf = false;
+                
+                if (build_dual) {
+                    nodes[nodes_counter].rejectable = child.rejectable;
+                    nodes[nodes_counter].D = child.D;
+                    nodes[nodes_counter].dual_bounds = child.dual_bounds;
+                    nodes[nodes_counter].m = child.m;
+                    nodes[nodes_counter].quadric_pair = child.quadric_pair;
                 }
-                current = current->parent;
+                
+                child.node_idx = nodes_counter;
+                (nodes.begin() + node_to_split.node_idx)->children[children_counter] = &nodes[nodes_counter];
+                children_counter++;
+                nodes_counter++;
+                *stack_ptr++ = child;
             }
-        }
+            // If the node has less than max_edges_per_leaf edges, it is a leaf node
+            else if(child.end_idx - child.start_idx <= max_edges_per_leaf && child.end_idx - child.start_idx > 0) {
+                leaves[leaves_counter].bounds = child.bounds;
+                leaves[leaves_counter].is_leaf = true;
+                leaves[leaves_counter].num_children = child.end_idx - child.start_idx;
 
-        root->bounds = merge(root->children[0]->bounds, root->children[1]->bounds);
-        root->weighted_total_length =
-            root->children[0]->weighted_total_length +
-            root->children[1]->weighted_total_length;
-        root->cost = Ci * surface_area(root->bounds) +
-            root->children[0]->cost + root->children[1]->cost;
-    }
-
-    struct PartitionEntry {
-        uint8_t partition;
-        uint8_t child_index;
-        BVHNodeType *parent;
-    };
-
-    template <int child_index>
-    DEVICE void restruct_tree(BVHNodeType *parent,
-                              BVHNodeType **leaves,
-                              BVHNodeType **nodes,
-                              uint8_t partition,
-                              uint8_t *optimal,
-                              int &index,
-                              int num_leaves) {
-        PartitionEntry stack[8];
-        auto stack_ptr = &stack[0];
-        *stack_ptr++ = PartitionEntry{partition, child_index, parent};
-
-        while (stack_ptr != &stack[0]) {
-            assert(stack_ptr >= stack && stack_ptr < stack + 8);
-            auto &entry = *--stack_ptr;
-            auto partition = entry.partition;
-            auto child_id = entry.child_index;
-            auto parent = entry.parent;
-            if (popc(partition) == 1) {
-                // Leaf
-                auto leaf_index = ffs(partition) - 1;
-                auto leaf = leaves[leaf_index];
-                parent->children[child_id] = leaf;
-                leaf->parent = parent;
-            } else {
-                // Internal
-                assert(index < 5);
-                auto node = nodes[index++];
-                node->cost = -1;
-                parent->children[child_id] = node;
-                node->parent = parent;
-                auto left_partition = optimal[partition];
-                auto right_partition = uint8_t((~left_partition) & partition);
-                *stack_ptr++ = PartitionEntry{left_partition, 0, node};
-                *stack_ptr++ = PartitionEntry{right_partition, 1, node};
-            }
-        }
-
-        propagate_cost(parent, leaves, num_leaves);
-    }
-
-    DEVICE void treelet_optimize(BVHNodeType *root) {
-        if (root->edge_id != -1) {
-            return;
-        }
-
-        // Form a treelet with max number of leaves being 7
-        BVHNodeType *leaves[7];
-        auto counter = 0;
-        leaves[counter++] = root->children[0];
-        leaves[counter++] = root->children[1];
-        // Also remember the internal nodes
-        // Max 7 (leaves) - 1 (root doesn't count) - 1
-        BVHNodeType *nodes[5];
-        auto nodes_counter = 0;
-        auto max_area = Real(0);
-        auto max_idx = 0;
-        while (counter < 7 && max_idx != -1) {
-            max_idx = -1;
-            max_area = Real(-1);
-
-            // Find the node with largest area and expand it
-            for (int i = 0; i < counter; i++) {
-                if (leaves[i]->edge_id == -1) {
-                    auto area = surface_area(leaves[i]->bounds);
-                    if (area > max_area) {
-                        max_area = area;
-                        max_idx = i;
-                    }
+                for(int itmp = child.start_idx; itmp < child.end_idx; itmp++){
+                    leaves[leaves_counter].edge_ids[itmp - child.start_idx] = edge_ids_local[itmp];
                 }
-            }
 
-            if (max_idx != -1) {
-                BVHNodeType *tmp = leaves[max_idx];
-                assert(nodes_counter < 5);
-                nodes[nodes_counter++] = tmp;
+                if (build_dual) {
+                    leaves[leaves_counter].rejectable = child.rejectable;
+                    leaves[leaves_counter].D = child.D;
+                    leaves[leaves_counter].dual_bounds = child.dual_bounds;
+                    leaves[leaves_counter].m = child.m;
+                    leaves[leaves_counter].quadric_pair = child.quadric_pair;
+                }
 
-                leaves[max_idx] = leaves[counter - 1];
-                leaves[counter - 1] = tmp->children[0];
-                leaves[counter] = tmp->children[1];
-                counter++;
+                (nodes.begin() + node_to_split.node_idx)->children[children_counter] = &leaves[leaves_counter];
+                children_counter++;
+                leaves_counter++;
             }
         }
-
-        unsigned char optimal[128];
-        calculate_optimal_treelet(counter, leaves, optimal);
-
-        // Use complement on right tree, and use original on left tree
-        auto mask = (unsigned char)((1u << counter) - 1);
-        auto index = 0;
-        auto left_index = mask;
-        auto left = optimal[left_index];
-        restruct_tree<0>(root, leaves, nodes, left, optimal, index, counter);
-        auto right = (~left) & mask;
-        restruct_tree<1>(root, leaves, nodes, right, optimal, index, counter);
-
-        // Compute bounds & cost
-        root->bounds = merge(root->children[0]->bounds, root->children[1]->bounds);
-        root->weighted_total_length =
-            root->children[0]->weighted_total_length +
-            root->children[1]->weighted_total_length;
-        root->cost = Ci * surface_area(root->bounds) +
-            root->children[0]->cost + root->children[1]->cost;
+        (nodes.begin() + node_to_split.node_idx)->num_children = children_counter;
     }
+    nodes.count = nodes_counter;
+    leaves.count = leaves_counter;
+    return n_roots;
+}
 
-    DEVICE void operator()(int idx) {
-        auto leaf = &leaves[idx];
-        leaf->cost = Ci * surface_area(leaf->bounds);
-        assert(isfinite(leaf->cost));
-        auto current = leaf->parent;
-        auto node_idx = current - nodes;
-        if (current != nullptr) {
-            while(true) {
-                auto res = atomic_increment(node_counters + node_idx);
-                if (res == 1) {
-                    // Terminate the first thread entering this node to avoid duplicate computation
-                    // It is important to terminate the first not the second so we ensure all children
-                    // are processed
-                    return;
-                }
-                treelet_optimize(current);
-                if (current == &nodes[0]) {
-                    return;
-                }
-                current = current->parent;
-                node_idx = current - &nodes[0];
-            }
+void update_length(const BufferView<Shape> &shapes,
+                   const BufferView<Edge> &edges,
+                   Buffer<BVHNode> &nodes,
+                   Buffer<BVHNode> &leaves,
+                   bool use_gpu) {
+
+    for(auto idx = leaves.begin(); idx != leaves.end(); idx++){
+        idx->total_length_weighted = 0;
+        for (int i = 0; i < idx->num_children; i++){
+            Edge e = edges[idx->edge_ids[i]];
+            Vector3 v0 = get_vertex(shapes[e.shape_id], e.v0);
+            Vector3 v1 = get_vertex(shapes[e.shape_id], e.v1);
+            idx->total_length_weighted += distance(v0, v1) * compute_exterior_dihedral_angle(shapes.data, e);
         }
     }
 
-    int *node_counters;
-    BVHNodeType *nodes;
-    BVHNodeType *leaves;
-};
-
-template <typename BVHNodeType>
-void optimize_bvh(BufferView<int> node_counters,
-                  BufferView<BVHNodeType> nodes,
-                  BufferView<BVHNodeType> leaves,
-                  bool use_gpu) {
-    parallel_for(bvh_optimizer<BVHNodeType>{
-            node_counters.begin(), nodes.begin(), leaves.begin()},
-        leaves.size(),
-        use_gpu);
+    for(auto idx = nodes.end() - 1; idx != nodes.begin() - 1; idx--){
+        idx->total_length_weighted = 0;
+        if(idx->num_children > 0){
+            for(int itmp = 0; itmp < idx->num_children; itmp++){
+                idx->total_length_weighted += idx->children[itmp]->total_length_weighted;
+            }
+        }
+    }
 }
 
 EdgeTree::EdgeTree(bool use_gpu,
                    const Camera &camera,
                    const BufferView<Shape> &shapes,
-                   const BufferView<Edge> &edges) {
+                   const BufferView<Edge> &edges,
+                   int max_edges_per_leaf,
+                   int min_points_for_fitting) {
     if (edges.size() == 0) {
         return;
     }
-    // We construct a 6D LBVH for the edges using AABB, where the first 3 dimensions are the
-    // spatial dimensions and the rest are the 3D hough space as described in 
-    // "Silhouette extraction in Hough space", Olson and Zhang
 
-    // We use the camera position as the origin for the 3D Hough transform.
-    // First, we split the edges into two sets.
-    // 1) The edges that are silhouette when looking from the camera
-    // 2) The rest
-    //
-    // According to Olson and Zhang, set 1 is a small set (and it includes all
-    // "boundary" edges that are always silhouettes), and set 2 is a silhouette iff
-    // it has exactly one point inside the "v-sphere" (the sphere whose center is at the query
-    // point and the radius is the distance between the query point and the origin)
-    // in Hough space.
-    // This means we can build a BVH over set 2 and discard edges whose two endpoints
-    // are both not inside the v-sphere during traversal.
     Buffer<int> edge_ids(use_gpu, edges.size());
     DISPATCH(use_gpu, thrust::sequence, edge_ids.begin(), edge_ids.end());
     auto cam_org = xfm_point(camera.cam_to_world, Vector3{0, 0, 0});
     auto partition_result = DISPATCH(use_gpu,
         thrust::stable_partition, edge_ids.begin(), edge_ids.end(),
-        edge_partitioner{shapes.begin(), cam_org, edges.begin()});
-    // We call the set of edges in 1) "cs_edges" and the set 2) "ncs_edges"
-    BufferView<int> cs_edge_ids(edge_ids.begin(), partition_result - edge_ids.begin());
-    BufferView<int> ncs_edge_ids(partition_result, edge_ids.end() - partition_result);
-    Buffer<int> node_counters(use_gpu, edges.size());
-    Buffer<AABB6> edge_bounds(use_gpu, edges.size());
+        edge_partitioner{shapes.begin(), edges.begin()});
+    // We call the set of edges in 1) "non_manifold_edges" and the set 2) "manifold_edges"
+    BufferView<int> non_manifold_edge_ids(edge_ids.begin(), partition_result - edge_ids.begin());
+    BufferView<int> manifold_edge_ids(partition_result, edge_ids.end() - partition_result);
+    Buffer<AABB3> edge_bounds(use_gpu, edges.size());
     compute_edge_bounds(shapes.begin(),
                         edges,
                         cam_org,
@@ -772,111 +710,169 @@ EdgeTree::EdgeTree(bool use_gpu,
     edge_pt_mad /= Real(edge_ids.size());
     edge_bounds_expand = 0.01f * length(edge_pt_mad);
 
-    // We build a 3D BVH over the camera silhouette edges, and build
-    // a 6D BVH over the non camera silhouette edges
-    // camera silhouette edges
-    if (cs_edge_ids.size() > 0) {
-        // Compute scene bounding box for BVH
-        AABB3 cs_scene_bounds = DISPATCH(use_gpu,
-            thrust::transform_reduce, cs_edge_ids.begin(), cs_edge_ids.end(),
-            id_to_aabb3{edge_bounds.begin()}, AABB3(), union_bounding_box{});
-        assert(cs_scene_bounds.p_max.x - cs_scene_bounds.p_min.x >= 0.f &&
-               cs_scene_bounds.p_max.y - cs_scene_bounds.p_min.y >= 0.f &&
-               cs_scene_bounds.p_max.z - cs_scene_bounds.p_min.z >= 0.f);
-        // Compute Morton code for LBVH
-        Buffer<uint64_t> cs_morton_codes(use_gpu, cs_edge_ids.size());
-        compute_morton_codes(cs_scene_bounds,
-                             edge_bounds.view(0, edge_bounds.size()),
-                             cs_edge_ids,
-                             cs_morton_codes.view(0, cs_edge_ids.size()),
-                             use_gpu);
-        // Sort by Morton code
-        DISPATCH(use_gpu, thrust::stable_sort_by_key,
-            cs_morton_codes.begin(), cs_morton_codes.end(), cs_edge_ids.begin());
+    assert(non_manifold_edge_ids.size() == 0);
 
-        cs_bvh_nodes = Buffer<BVHNode3>(use_gpu, max(cs_morton_codes.size() - 1, 1));
-        cs_bvh_leaves = Buffer<BVHNode3>(use_gpu, cs_morton_codes.size());
-        // Initialize nodes
-        BVHNode3 init_node{AABB3(), Real(0), nullptr, {nullptr, nullptr}, -1};
-        DISPATCH(use_gpu, thrust::fill, cs_bvh_nodes.begin(), cs_bvh_nodes.end(), init_node);
-        DISPATCH(use_gpu, thrust::fill, cs_bvh_leaves.begin(), cs_bvh_leaves.end(), init_node);
-        // Build tree (see
-        // "Maximizing Parallelism in the Construction of BVHs, Octrees, and k-d Trees")
-        build_radix_tree(cs_morton_codes.view(0, cs_morton_codes.size()),
-                         cs_edge_ids,
-                         cs_bvh_nodes.view(0, cs_bvh_nodes.size()),
-                         cs_bvh_leaves.view(0, cs_bvh_leaves.size()),
-                         use_gpu);
-        // Compute BVH node information (bounding box, length of edges, etc)
-        DISPATCH(use_gpu, thrust::fill,
-            node_counters.begin(), node_counters.begin() + cs_bvh_leaves.size(), 0);
-        compute_bvh(shapes,
-                    edges,
-                    cs_edge_ids,
-                    edge_bounds.view(0, edge_bounds.size()),
-                    node_counters.view(0, cs_bvh_leaves.size()),
-                    cs_bvh_nodes.view(0, cs_bvh_nodes.size()),
-                    cs_bvh_leaves.view(0, cs_bvh_leaves.size()),
-                    use_gpu);
-        DISPATCH(use_gpu, thrust::fill,
-            node_counters.begin(), node_counters.begin() + cs_bvh_leaves.size(), 0);
-        optimize_bvh(node_counters.view(0, cs_bvh_leaves.size()),
-                     cs_bvh_nodes.view(0, cs_bvh_nodes.size()),
-                     cs_bvh_leaves.view(0, cs_bvh_leaves.size()),
-                     use_gpu);
+    // Initialize nodes
+    BVHNode init_node{AABB3(), 
+                        AABB3(),
+                        false,
+                        Vector4(),
+                        Matrix4x4(),
+                        QuadricPair(),
+                        Real(0), 
+                        {nullptr, nullptr, nullptr, nullptr}, 
+                        false, 
+                        {-1, -1, -1, -1}, 
+                        0};
+
+    // Warning: not tested
+    if (non_manifold_edge_ids.size() > 0) {
+        // Compute scene bounding box for BVH
+        AABB3 non_manifold_scene_bounds = DISPATCH(use_gpu,
+            thrust::transform_reduce, non_manifold_edge_ids.begin(), non_manifold_edge_ids.end(),
+            id_to_aabb3{edge_bounds.begin()}, AABB3(), union_bounding_box{});
+        assert(non_manifold_scene_bounds.p_max.x - non_manifold_scene_bounds.p_min.x >= 0.f &&
+               non_manifold_scene_bounds.p_max.y - non_manifold_scene_bounds.p_min.y >= 0.f &&
+               non_manifold_scene_bounds.p_max.z - non_manifold_scene_bounds.p_min.z >= 0.f);
+  
+
+        non_manifold_bvh_nodes = Buffer<BVHNode>(use_gpu, max(non_manifold_edge_ids.size() - 1, 1));
+        non_manifold_bvh_leaves = Buffer<BVHNode>(use_gpu, non_manifold_edge_ids.size());
+
+        DISPATCH(use_gpu, thrust::fill, non_manifold_bvh_nodes.begin(), non_manifold_bvh_nodes.end(), init_node);
+        DISPATCH(use_gpu, thrust::fill, non_manifold_bvh_leaves.begin(), non_manifold_bvh_leaves.end(), init_node);
+        // Build tree 
+        n_non_manifold_bvh_roots = build_tree(non_manifold_scene_bounds,
+                                              shapes,
+                                              edges,
+                                              edge_bounds,
+                                              non_manifold_edge_ids,
+                                              non_manifold_bvh_nodes,
+                                              non_manifold_bvh_leaves,
+                                              false,
+                                              max_edges_per_leaf,
+                                              min_points_for_fitting,
+                                              use_gpu);
+
+        update_length(shapes,
+                      edges,
+                      non_manifold_bvh_nodes,
+                      non_manifold_bvh_leaves,
+                      use_gpu);
+        
     }
 
-    // Do the same thing for non camera silhouette edges
-    if (ncs_edge_ids.size() > 0) {
+    // Build tree for manifold edges
+    if (manifold_edge_ids.size() > 0) {
         // Compute scene bounding box for BVH
-        AABB6 ncs_scene_bounds = DISPATCH(use_gpu,
-            thrust::transform_reduce, ncs_edge_ids.begin(), ncs_edge_ids.end(),
-            id_to_aabb6{edge_bounds.begin()}, AABB6(), union_bounding_box{});
-        assert(ncs_scene_bounds.p_max.x - ncs_scene_bounds.p_min.x >= 0.f &&
-               ncs_scene_bounds.p_max.y - ncs_scene_bounds.p_min.y >= 0.f &&
-               ncs_scene_bounds.p_max.z - ncs_scene_bounds.p_min.z >= 0.f);
-        assert(ncs_scene_bounds.d_max.x - ncs_scene_bounds.d_min.x >= 0.f &&
-               ncs_scene_bounds.d_max.y - ncs_scene_bounds.d_min.y >= 0.f &&
-               ncs_scene_bounds.d_max.z - ncs_scene_bounds.d_min.z >= 0.f);
-        // Compute Morton code for LBVH
-        Buffer<uint64_t> ncs_morton_codes(use_gpu, ncs_edge_ids.size());
-        compute_morton_codes(ncs_scene_bounds,
-                             edge_bounds.view(0, edge_bounds.size()),
-                             ncs_edge_ids,
-                             ncs_morton_codes.view(0, ncs_edge_ids.size()),
-                             use_gpu);
-        // Sort by Morton code
-        DISPATCH(use_gpu, thrust::stable_sort_by_key,
-            ncs_morton_codes.begin(), ncs_morton_codes.end(), ncs_edge_ids.begin());
-        ncs_bvh_nodes = Buffer<BVHNode6>(use_gpu, max(ncs_morton_codes.size() - 1, 1));
-        ncs_bvh_leaves = Buffer<BVHNode6>(use_gpu, ncs_morton_codes.size());
-        // Initialize nodes
-        BVHNode6 init_node{AABB6(), Real(0), nullptr, {nullptr, nullptr}, -1};
-        DISPATCH(use_gpu, thrust::fill, ncs_bvh_nodes.begin(), ncs_bvh_nodes.end(), init_node);
-        DISPATCH(use_gpu, thrust::fill, ncs_bvh_leaves.begin(), ncs_bvh_leaves.end(), init_node);
-        // Build tree (see
-        // "Maximizing Parallelism in the Construction of BVHs, Octrees, and k-d Trees")
-        build_radix_tree(ncs_morton_codes.view(0, ncs_morton_codes.size()),
-                         ncs_edge_ids,
-                         ncs_bvh_nodes.view(0, ncs_bvh_nodes.size()),
-                         ncs_bvh_leaves.view(0, ncs_bvh_leaves.size()),
-                         use_gpu);
-        // Compute BVH node information (bounding box, length of edges, etc)
-        DISPATCH(use_gpu, thrust::fill,
-            node_counters.begin(), node_counters.begin() + ncs_bvh_leaves.size(), 0);
-        compute_bvh(shapes,
+        AABB3 manifold_scene_bounds = DISPATCH(use_gpu,
+            thrust::transform_reduce, manifold_edge_ids.begin(), manifold_edge_ids.end(),
+            id_to_aabb3{edge_bounds.begin()}, AABB3(), union_bounding_box{});
+        assert(manifold_scene_bounds.p_max.x - manifold_scene_bounds.p_min.x >= 0.f &&
+               manifold_scene_bounds.p_max.y - manifold_scene_bounds.p_min.y >= 0.f &&
+               manifold_scene_bounds.p_max.z - manifold_scene_bounds.p_min.z >= 0.f);
+
+        manifold_bvh_nodes = Buffer<BVHNode>(use_gpu, max(manifold_edge_ids.size() - 1, 1));
+        manifold_bvh_leaves = Buffer<BVHNode>(use_gpu, manifold_edge_ids.size());
+
+        DISPATCH(use_gpu, thrust::fill, manifold_bvh_nodes.begin(), manifold_bvh_nodes.end(), init_node);
+        DISPATCH(use_gpu, thrust::fill, manifold_bvh_leaves.begin(), manifold_bvh_leaves.end(), init_node);
+
+        n_manifold_bvh_roots = build_tree(manifold_scene_bounds,
+                    shapes,
                     edges,
-                    ncs_edge_ids,
-                    edge_bounds.view(0, edge_bounds.size()),
-                    node_counters.view(0, ncs_bvh_leaves.size()),
-                    ncs_bvh_nodes.view(0, ncs_bvh_nodes.size()),
-                    ncs_bvh_leaves.view(0, ncs_bvh_leaves.size()),
+                    edge_bounds,
+                    manifold_edge_ids,
+                    manifold_bvh_nodes,
+                    manifold_bvh_leaves,
+                    true,
+                    max_edges_per_leaf,
+                    min_points_for_fitting,
                     use_gpu);
-        DISPATCH(use_gpu, thrust::fill,
-            node_counters.begin(), node_counters.begin() + ncs_bvh_leaves.size(), 0);
-        optimize_bvh(node_counters.view(0, ncs_bvh_leaves.size()),
-                     ncs_bvh_nodes.view(0, ncs_bvh_nodes.size()),
-                     ncs_bvh_leaves.view(0, ncs_bvh_leaves.size()),
-                     use_gpu);
+
+        update_length(shapes,
+                      edges,
+                      manifold_bvh_nodes,
+                      manifold_bvh_leaves,
+                      use_gpu);
+    }
+    non_manifold_size = non_manifold_edge_ids.size();
+    manifold_size = manifold_edge_ids.size();
+}
+
+void test_compute_stack_item(int n_edges, ptr<int> edge_data, ptr<double> output, Shape shape, bool use_gpu) {
+
+    Buffer<Edge> edges(use_gpu, n_edges);
+    for (int i = 0; i < n_edges; i++) {
+        edges[i].shape_id = 0;
+        edges[i].v0 = edge_data[4 * i];
+        edges[i].v1 = edge_data[4 * i + 1];
+        edges[i].f0 = edge_data[4 * i + 2];
+        edges[i].f1 = edge_data[4 * i + 3];
+    }
+
+    int start_idx = 0;
+    int end_idx = n_edges;
+    Buffer<int> edge_ids_local(use_gpu, n_edges);
+    for (int i = 0; i < n_edges; i++) {
+        edge_ids_local[i] = i;
+    }
+
+    BufferView<Shape> shapes(&shape, 1);
+
+    Buffer<AABB3> edge_bounds(use_gpu, n_edges);
+    compute_edge_bounds(shapes.begin(),
+                        edges.view(0, n_edges),
+                        Vector3(0, 0, 0),
+                        edge_bounds.view(0, n_edges),
+                        use_gpu);
+
+    StackItem node;
+    Matrix4x4 m = Matrix4x4::identity();
+    compute_stack_item(node, 
+                       shapes, 
+                       edges.view(0, n_edges), 
+                       edge_bounds, 
+                       start_idx, 
+                       end_idx, 
+                       edge_ids_local, 
+                       true, 
+                       15, 
+                       m, 
+                       use_gpu);
+
+    output[0] = node.bounds.p_min.x;
+    output[1] = node.bounds.p_min.y;
+    output[2] = node.bounds.p_min.z;
+
+    output[3] = node.bounds.p_max.x;
+    output[4] = node.bounds.p_max.y;
+    output[5] = node.bounds.p_max.z;
+
+    output[6] = node.rejectable;
+
+    output[7] = node.D.x;
+    output[8] = node.D.y;
+    output[9] = node.D.z;
+    output[10] = node.D.w;
+
+    output[11] = node.dual_bounds.p_min.x;
+    output[12] = node.dual_bounds.p_min.y;
+    output[13] = node.dual_bounds.p_min.z;
+
+    output[14] = node.dual_bounds.p_max.x;
+    output[15] = node.dual_bounds.p_max.y;
+    output[16] = node.dual_bounds.p_max.z;
+
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            output[17 + i * 4 + j] = node.quadric_pair.quadric1.matrix(i, j);
+        }
+    }
+
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            output[33 + i * 4 + j] = node.quadric_pair.quadric2.matrix(i, j);
+        }
     }
 }

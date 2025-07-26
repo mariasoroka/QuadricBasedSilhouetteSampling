@@ -24,14 +24,16 @@ struct EnvironmentMap {
                    ptr<float> sample_cdf_ys,
                    ptr<float> sample_cdf_xs,
                    float pdf_norm,
-                   bool directly_visible)
+                   bool directly_visible,
+                   Real mean_intensity)
         : values(values),
           env_to_world(env_to_world.get()),
           world_to_env(world_to_env.get()),
           sample_cdf_ys(sample_cdf_ys.get()),
           sample_cdf_xs(sample_cdf_xs.get()),
           pdf_norm((Real)pdf_norm),
-          directly_visible(directly_visible) {}
+          directly_visible(directly_visible),
+          mean_intensity(mean_intensity) {}
 
     inline int get_levels() const {
         return values.num_levels;
@@ -41,6 +43,10 @@ struct EnvironmentMap {
         return std::make_tuple(values.width[i], values.height[i]);
     }
 
+    inline Real get_mean_intensity() const {
+        return mean_intensity;
+    }
+
     Texture3 values;
     Matrix4x4 env_to_world;
     Matrix4x4 world_to_env;
@@ -48,6 +54,7 @@ struct EnvironmentMap {
     float *sample_cdf_xs;
     Real pdf_norm;
     bool directly_visible;
+    Real mean_intensity;
 };
 
 struct DEnvironmentMap {

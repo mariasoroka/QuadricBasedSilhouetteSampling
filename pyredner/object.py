@@ -62,7 +62,8 @@ class Object:
                  uv_indices: Optional[torch.Tensor] = None,
                  normal_indices: Optional[torch.Tensor] = None,
                  colors: Optional[torch.Tensor] = None,
-                 directly_visible: bool = True):
+                 directly_visible: bool = True,
+                 polygon_light: bool = False,):
         self.vertices = vertices
         self.indices = indices
         self.uvs = uvs
@@ -74,3 +75,4 @@ class Object:
         self.light_intensity = light_intensity
         self.light_two_sided = light_two_sided
         self.directly_visible = directly_visible
+        self.polygon_light = polygon_light

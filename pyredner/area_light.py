@@ -1,4 +1,5 @@
 import torch
+from typing import Optional
 
 class AreaLight:
     """
@@ -20,18 +21,24 @@ class AreaLight:
                  shape_id: int,
                  intensity: torch.Tensor,
                  two_sided: bool = False,
-                 directly_visible: bool = True):
+                 directly_visible: bool = True,
+                 polygon_light: bool = False,
+                 polygon_silhouette: Optional[torch.Tensor] = None):
         self.shape_id = shape_id
         self.intensity = intensity
         self.two_sided = two_sided
         self.directly_visible = directly_visible
+        self.polygon_light = polygon_light
+        self.polygon_silhouette = polygon_silhouette
 
     def state_dict(self):
         return {
             'shape_id': self.shape_id,
             'intensity': self.intensity,
             'two_sided': self.two_sided,
-            'directly_visible': self.directly_visible
+            'directly_visible': self.directly_visible,
+            'polygon_light': self.polygon_light,
+            'polygon_silhouette': self.polygon_silhouette
         }
 
     @classmethod
@@ -40,4 +47,6 @@ class AreaLight:
             state_dict['shape_id'],
             state_dict['intensity'],
             state_dict['two_sided'],
-            state_dict['directly_visible'])
+            state_dict['directly_visible'],
+            state_dict['polygon_light'],
+            state_dict['polygon_silhouette'])

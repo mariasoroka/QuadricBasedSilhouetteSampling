@@ -227,6 +227,8 @@ class RenderFunction(torch.autograd.Function):
             args.append(light.intensity.cpu())
             args.append(light.two_sided)
             args.append(light.directly_visible)
+            args.append(light.polygon_light)
+            args.append(light.polygon_silhouette.to(device) if light.polygon_silhouette is not None else None)
         if scene.envmap is not None:
             assert(torch.isfinite(scene.envmap.env_to_world).all())
             assert(torch.isfinite(scene.envmap.world_to_env).all())
@@ -239,6 +241,7 @@ class RenderFunction(torch.autograd.Function):
             args.append(scene.envmap.sample_cdf_xs.to(device))
             args.append(scene.envmap.pdf_norm)
             args.append(scene.envmap.directly_visible)
+            args.append(scene.envmap.values.get_mean_value())
         else:
             args.append(None)
         if scene.vmflight is not None:
@@ -545,13 +548,19 @@ class RenderFunction(torch.autograd.Function):
             current_index += 1
             directly_visible = args[current_index]
             current_index += 1
+            polygon_light = args[current_index]
+            current_index += 1
+            polygon_silhouette = args[current_index]
+            current_index += 1
 
             area_lights.append(redner.AreaLight(\
                 shape_id,
                 redner.float_ptr(intensity.data_ptr()),
                 two_sided,
-                directly_visible))
-
+                directly_visible,
+                polygon_light,
+                redner.int_ptr(polygon_silhouette.data_ptr() if polygon_silhouette is not None else 0),
+                polygon_silhouette.shape[0] if polygon_silhouette is not None else 0))
         envmap = None
         if args[current_index] is not None:
             num_levels = args[current_index]
@@ -574,6 +583,10 @@ class RenderFunction(torch.autograd.Function):
             current_index += 1
             directly_visible = args[current_index]
             current_index += 1
+            mean_intensity = args[current_index]
+            current_index += 1
+
+
             values = redner.Texture3(\
                 [redner.float_ptr(x.data_ptr()) for x in values],
                 [x.shape[1] for x in values], # width
@@ -587,7 +600,8 @@ class RenderFunction(torch.autograd.Function):
                 redner.float_ptr(sample_cdf_ys.data_ptr()),
                 redner.float_ptr(sample_cdf_xs.data_ptr()),
                 pdf_norm,
-                directly_visible)
+                directly_visible,
+                mean_intensity)
         else:
             current_index += 1
 
@@ -1287,6 +1301,8 @@ class RenderFunction(torch.autograd.Function):
             ret_list.append(buffers.d_intensity_list[i].cpu())
             ret_list.append(None) # two_sided
             ret_list.append(None) # directly_visible
+            ret_list.append(None) # polygon_light
+            ret_list.append(None) # polygon_silhouette
 
         if ctx.envmap is not None:
             ret_list.append(None) # num_levels
@@ -1299,6 +1315,7 @@ class RenderFunction(torch.autograd.Function):
             ret_list.append(None) # sample_cdf_xs
             ret_list.append(None) # pdf_norm
             ret_list.append(None) # directly_visible
+            ret_list.append(None) # mean_intensity
         else:
             ret_list.append(None)
         

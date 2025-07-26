@@ -126,6 +126,39 @@ def compute_vertex_normal(vertices: torch.Tensor,
     assert(torch.isfinite(normals).all())
     return normals.contiguous()
 
+def get_silhouette(indices: torch.Tensor):
+    edges_0 = torch.cat([indices[:, 0], indices[:, 1], indices[:, 2]], dim=0)
+    edges_1 = torch.cat([indices[:, 1], indices[:, 2], indices[:, 0]], dim=0)
+    flipped = edges_0 > edges_1
+
+    edges_sorted_0 = torch.where(flipped, edges_1, edges_0)
+    edges_sorted_1 = torch.where(flipped, edges_0, edges_1)
+
+    edges = torch.stack([edges_sorted_0, edges_sorted_1], dim=1)
+
+    unique_edges, inverse_indices, counts = torch.unique(edges, sorted=False, return_inverse=True, return_counts=True, dim=0)
+
+    silhouette_edges = unique_edges[counts == 1]
+
+    reduced_flipped = torch.zeros(unique_edges.shape[0], dtype=torch.int32, device=indices.device)
+    reduced_flipped.scatter_add_(0, inverse_indices, flipped.int())
+
+    oriented_silhouette_edges = torch.zeros_like(silhouette_edges)
+    oriented_silhouette_edges[:, 0] = torch.where(reduced_flipped[counts == 1] > 0, silhouette_edges[:, 1], silhouette_edges[:, 0])
+    oriented_silhouette_edges[:, 1] = torch.where(reduced_flipped[counts == 1] > 0, silhouette_edges[:, 0], silhouette_edges[:, 1])
+
+    for i in range(1, oriented_silhouette_edges.shape[0]):
+        look_for = oriented_silhouette_edges[i - 1, 1]
+        for j in range(i + 1, oriented_silhouette_edges.shape[0]):
+            if oriented_silhouette_edges[j, 0] == look_for:
+                tmp0 = oriented_silhouette_edges[j, 0].clone()
+                tmp1 = oriented_silhouette_edges[j, 1].clone()
+                oriented_silhouette_edges[j, 0] = oriented_silhouette_edges[i, 0]
+                oriented_silhouette_edges[j, 1] = oriented_silhouette_edges[i, 1]
+                oriented_silhouette_edges[i, 0] = tmp0
+                oriented_silhouette_edges[i, 1] = tmp1
+
+    return oriented_silhouette_edges.flatten()
 
 def bound_vertices(vertices: torch.Tensor, indices: torch.Tensor):
     """

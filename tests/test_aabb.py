@@ -163,3 +163,88 @@ def test_intersect_plane_2():
 
     points.destroy_array()
     num_points.destroy_array()
+
+
+def test_get_bbox_silhouette_1():
+    p_min = redner.Vector3(-0.39268199,  0.465646,   -0.45052901)
+    p_max = redner.Vector3(-0.073913,    0.79917198, -0.12509)
+    p = redner.Vector3(-1.10526316, -1.73684211, -0.47368421)
+    aabb = redner.AABB3(p_min, p_max)
+
+    silhouette = redner.Vector3_ptr(0)
+    silhouette.allocate(6)
+
+    n_points = 0
+    n_points = redner.test_get_bbox_silhouette_py(aabb, p, silhouette)
+
+    redner_silhouette = np.zeros((n_points, 3), dtype=np.float32)
+    for i in range(n_points):
+        redner_silhouette[i, 0] = silhouette.get_index(i).x
+        redner_silhouette[i, 1] = silhouette.get_index(i).y
+        redner_silhouette[i, 2] = silhouette.get_index(i).z
+
+    correct_silhouette = np.array([[-0.073913  ,  0.465646  , -0.12509   ],
+                                   [-0.39268199,  0.465646  , -0.12509   ],
+                                   [-0.39268199,  0.79917198, -0.12509   ],
+                                   [-0.39268199,  0.79917198, -0.45052901],
+                                   [-0.073913  ,  0.79917198, -0.45052901],
+                                   [-0.073913  ,  0.465646  , -0.45052901]])
+    
+    assert(n_points == 6)
+    assert(np.allclose(redner_silhouette, correct_silhouette[::-1]))
+
+def test_get_bbox_silhouette_2():
+    p_min = redner.Vector3(-0.39268199,  0.465646,   -0.45052901)
+    p_max = redner.Vector3(-0.073913,    0.79917198, -0.12509)
+    p = redner.Vector3(-0.15789474, -1.73684211, -0.47368421)
+    aabb = redner.AABB3(p_min, p_max)
+
+    silhouette = redner.Vector3_ptr(0)
+    silhouette.allocate(6)
+
+    n_points = 0
+    n_points = redner.test_get_bbox_silhouette_py(aabb, p, silhouette)
+
+    redner_silhouette = np.zeros((n_points, 3), dtype=np.float32)
+    for i in range(n_points):
+        redner_silhouette[i, 0] = silhouette.get_index(i).x
+        redner_silhouette[i, 1] = silhouette.get_index(i).y
+        redner_silhouette[i, 2] = silhouette.get_index(i).z
+
+    correct_silhouette = np.array([[-0.073913  ,  0.465646  , -0.45052901],
+                                   [-0.073913  ,  0.79917198, -0.45052901],
+                                   [-0.39268199,  0.79917198, -0.45052901],
+                                   [-0.39268199,  0.465646  , -0.45052901],
+                                   [-0.39268199,  0.465646  , -0.12509   ],
+                                   [-0.073913  ,  0.465646  , -0.12509   ]])
+    correct_silhouette = np.roll(correct_silhouette, 2, axis=0)
+    
+    assert(n_points == 6)
+    assert(np.allclose(redner_silhouette, correct_silhouette[::-1]))
+
+def test_get_bbox_silhouette_3():
+    p_min = redner.Vector3(-0.39268199,  0.465646,   -0.45052901)
+    p_max = redner.Vector3(-0.073913,    0.79917198, -0.12509)
+    p = redner.Vector3(-0.15789474, -1.73684211, -0.15789474)
+    aabb = redner.AABB3(p_min, p_max)
+
+    silhouette = redner.Vector3_ptr(0)
+    silhouette.allocate(6)
+
+    n_points = 0
+    n_points = redner.test_get_bbox_silhouette_py(aabb, p, silhouette)
+
+    redner_silhouette = np.zeros((n_points, 3), dtype=np.float32)
+    for i in range(n_points):
+        redner_silhouette[i, 0] = silhouette.get_index(i).x
+        redner_silhouette[i, 1] = silhouette.get_index(i).y
+        redner_silhouette[i, 2] = silhouette.get_index(i).z
+
+    correct_silhouette = np.array([[-0.39268199,  0.465646,   -0.12509   ],
+                                   [-0.39268199,  0.465646,   -0.45052901],
+                                   [-0.073913  ,  0.465646,   -0.45052901],
+                                   [-0.073913  ,  0.465646,   -0.12509   ]])
+    
+    assert(n_points == 4)
+    assert(np.allclose(redner_silhouette, correct_silhouette[::-1]))
+

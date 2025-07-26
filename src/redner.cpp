@@ -212,7 +212,11 @@ PYBIND11_MODULE(redner, m) {
         .def(py::init<int, // shape_id
                       ptr<float>, // intensity
                       bool, // two_sided
-                      bool>()); // directly_visible
+                      bool, // directly_visible
+                      bool, // polygon_light
+                      ptr<int>, // polygon_silhouette
+                      int>()); // n_polygon_silhouette
+
 
     py::class_<DAreaLight>(m, "DAreaLight", py::module_local())
         .def(py::init<ptr<float>>());
@@ -224,7 +228,8 @@ PYBIND11_MODULE(redner, m) {
                       ptr<float>, // sample_cdf_ys
                       ptr<float>, // sample_cdf_xs
                       Real, // pdf_norm
-                      bool>()) // directly_visible
+                      bool, // directly_visible
+                      Real>()) // mean_intensity
         .def("get_levels", &EnvironmentMap::get_levels)
         .def("get_size", &EnvironmentMap::get_size);
     py::class_<DEnvironmentMap, std::shared_ptr<DEnvironmentMap>>(m, "DEnvironmentMap", py::module_local())
@@ -275,6 +280,7 @@ PYBIND11_MODULE(redner, m) {
                       bool, // sample_pixel_center
                       bool, // use_primary_edge_sampling
                       bool, // use_secondary_edge_sampling
+                      bool, // use_nee
                       bool // remove_concave
                       >())
         .def_readwrite("seed", &edge_sampling::RenderOptions::seed)
@@ -478,6 +484,9 @@ PYBIND11_MODULE(redner, m) {
         .def_readwrite("p_max", &AABB3::p_max);
     m.def("corner", &corner, "");
 
+    py::class_<EdgeSampler>(m, "EdgeSampler", py::module_local())
+        .def(py::init<Scene&, bool, bool, bool>());
+
     py::class_<MinSphere3D>(m, "MinSphere3D", py::module_local())
         .def_readwrite("center", &MinSphere3D::center)
         .def_readwrite("radius", &MinSphere3D::radius);
@@ -503,6 +512,8 @@ PYBIND11_MODULE(redner, m) {
     m.def("bbox_ltc", &bbox_ltc, "");
     m.def("test_bbox_average_bsdf", &test_bbox_average_bsdf, "");
     m.def("sample_discrete_n_py", &sample_discrete_n_py, "");
+    m.def("test_compute_stack_item", &test_compute_stack_item, "");
+    m.def("test_get_bbox_silhouette_py", &test_get_bbox_silhouette_py, "");
     /// Tests
     m.def("test_sample_primary_rays", &test_sample_primary_rays, "");
     m.def("test_scene_intersect", &test_scene_intersect, "");
