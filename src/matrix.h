@@ -758,3 +758,100 @@ inline TMatrix3x3<T> find_basis(const TVector3<T> &n) {
 
     return m;
 }
+
+// Find an orthonormal basis (e1, e2, e3, e4) in R^4 s.t. e1 || n. 
+// For that compute QR factorization of m = [ n, i1, i2, i3, i4 ],
+// where i1, i2, i3, i4 are the standard basis vectors in R^3.
+template <typename T>
+inline TMatrix4x4<T> find_basis(const TVector4<T> &n) {
+    TMatrix4x4<T> m;
+    int zero_idx = -1;
+    T Q[4 * 5];
+    for (int i = 0; i < 4; i++) {
+        Q[i] = n[i];
+    }
+    for (int i = 1; i < 5; i++) {
+        for (int j = 0; j < 4; j++) {
+            if(i - 1 == j) {
+                Q[i * 4 + j] = T(1);
+            }
+            else {
+                Q[i * 4 + j] = T(0);
+            }
+        }
+    }
+
+    for (int i = 0; i < 5; i++) {
+        if (i != 0) {
+            T max = 0;
+            int max_idx = -1;
+
+            for (int j = i; j < 5; j++) {
+                T sum = 0;
+                for (int k = 0; k < 4; k++) {
+                    sum += Q[j * 4 + k] * Q[j * 4 + k];
+                }
+                if (sum > max) {
+                    max = sum;
+                    max_idx = j;
+                }
+            }
+
+            if (max_idx != i && max_idx != -1 && max != 0) {
+                for (int j = 0; j < 4; j++) {
+                    std::swap(Q[i * 4 + j], Q[max_idx * 4 + j]);
+                }
+            }
+            for (int j = 0; j < i; j++) {
+
+                T dot_prod = 0;
+                T norm = 0;
+                for (int k = 0; k < 4; k++) {
+                    dot_prod += Q[i * 4 + k] * Q[j * 4 + k];
+                    norm += Q[j * 4 + k] * Q[j * 4 + k];
+                }
+                if(norm != 0) {
+                    for (int k = 0; k < 4; k++) {
+                        Q[i * 4 + k] -= (dot_prod / norm) * Q[j * 4 + k];
+                    }
+                }
+            }
+        }
+        T norm = 0;
+        for (int j = 0; j < 4; j++) {
+            norm += Q[i * 4 + j] * Q[i * 4 + j];
+        }
+        norm = sqrt(norm);
+        if (norm >= 1e-6) {
+            for (int j = 0; j < 4; j++) {
+                Q[i * 4 + j] /= norm;
+            }
+        }
+        else {
+            zero_idx = i;
+        }
+    }
+
+    if (zero_idx != -1) {
+        for (int j = 0; j < 4; j++) {
+            std::swap(Q[zero_idx * 4 + j], Q[4 * 4 + j]);
+        }
+    }
+    m = TMatrix4x4<T>(Q[4], Q[8], Q[12], Q[0],
+                      Q[5], Q[9], Q[13], Q[1],
+                      Q[6], Q[10], Q[14], Q[2],
+                      Q[7], Q[11], Q[15], Q[3]);
+
+    return m;
+}
+
+template <typename T>
+inline TMatrix4x4<T> outer_product(const TVector4<T> v) {
+    TMatrix4x4<T> m;
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            m(i, j) = v[i] * v[j];
+        }
+    }
+    return m;
+}
