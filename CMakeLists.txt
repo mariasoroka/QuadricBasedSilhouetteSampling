@@ -57,6 +57,7 @@ set(SRCS src/aabb.h
          src/camera_distortion.h
          src/channels.h
          src/cuda_utils.h
+         src/dpdf.h
          src/edge.h
          src/edge_tree.h
          src/envmap.h

@@ -18,6 +18,7 @@
 #include "lp_solve.h"
 #include "offset_quadric.h"
 #include "solid_angles.h"
+#include "dpdf.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -500,7 +501,7 @@ PYBIND11_MODULE(redner, m) {
     m.def("bbox_solid_angle", &bbox_solid_angle, "");
     m.def("bbox_ltc", &bbox_ltc, "");
     m.def("test_bbox_average_bsdf", &test_bbox_average_bsdf, "");
-    
+    m.def("sample_discrete_n_py", &sample_discrete_n_py, "");
     /// Tests
     m.def("test_sample_primary_rays", &test_sample_primary_rays, "");
     m.def("test_scene_intersect", &test_scene_intersect, "");
