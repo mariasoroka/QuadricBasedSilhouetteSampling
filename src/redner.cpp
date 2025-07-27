@@ -19,6 +19,7 @@
 #include "offset_quadric.h"
 #include "solid_angles.h"
 #include "dpdf.h"
+#include "visualizer.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -514,6 +515,15 @@ PYBIND11_MODULE(redner, m) {
     m.def("sample_discrete_n_py", &sample_discrete_n_py, "");
     m.def("test_compute_stack_item", &test_compute_stack_item, "");
     m.def("test_get_bbox_silhouette_py", &test_get_bbox_silhouette_py, "");
+
+    m.def("intersect_one_ray", &intersect_one_ray, "");
+    m.def("get_n_nodes", &get_n_nodes, "");
+    m.def("get_n_edges", &get_n_edges, "");
+    m.def("compute_rejection_pattern", &compute_rejection_pattern, "");
+    m.def("compute_gt_rejection_pattern", &compute_gt_rejection_pattern, "");
+    m.def("compute_edge_probs", &compute_edge_probs, "");
+    m.def("compute_gt_edge_probs", &compute_gt_edge_probs, "");   
+
     /// Tests
     m.def("test_sample_primary_rays", &test_sample_primary_rays, "");
     m.def("test_scene_intersect", &test_scene_intersect, "");

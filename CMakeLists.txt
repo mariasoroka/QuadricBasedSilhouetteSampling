@@ -95,6 +95,7 @@ set(SRCS src/aabb.h
          src/texture.h
          src/transform.h
          src/vector.h
+         src/visualizer.h
          src/vmf.h
          src/warp_common.h
          src/warp_aux.h
@@ -134,6 +135,7 @@ set(SRCS src/aabb.h
          src/shape_adjacency.cpp
          src/sobol_sampler.cpp
          src/solid_angles.cpp
+         src/visualizer.cpp
          src/vmf.cpp
          src/warp_aux.cpp
          src/warp_cv.cpp
