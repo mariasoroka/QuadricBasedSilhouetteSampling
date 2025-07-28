@@ -156,17 +156,23 @@ DEVICE
 inline bool intersect(const Sphere &s, const AABB3 &b) {
     // "A Simple Method for Box-Sphere Intersection Testing", Jim Arvo
     // https://github.com/erich666/GraphicsGems/blob/master/gems/BoxSphere.c
-    auto d_min = Real(0);
+    auto dmax = Real(0);
+    auto dmin = Real(0);
     auto r2 = square(s.radius);
-    for(int i = 0; i < 3; i++) {
-        if (s.center[i] < b.p_min[i]) {
-            d_min += square(s.center[i] - b.p_min[i]);
-        } else if (s.center[i] > b.p_max[i]) {
-            d_min += square(s.center[i] - b.p_max[i]);
+
+    for(int i = 0; i < 3; i++ ) {
+        auto a = square(s.center[i] - b.p_min[i] );
+        auto c = square(s.center[i] - b.p_max[i] );
+        dmax += max(a, c);
+        if(s.center[i] < b.p_min[i] ){
+            dmin += a;
+        } 
+        else if(s.center[i] > b.p_max[i] ){
+            dmin += c;
         }
-        if (d_min <= r2) {
-            return true;
-        }
+    }
+    if( dmin <= r2 && r2 <= dmax ){
+        return true;
     }
     return false;
 }
