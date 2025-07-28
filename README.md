@@ -1,5 +1,7 @@
 ## Quadric-Based Silhouette Sampling for Differentiable Rendering
 
+![](Teaser.jpg)
+
 This repository contains the source code for the [Quadric-Based Silhouette Sampling for Differentiable Rendering](https://mariasoroka.github.io/papers/EdgeSampling.html) by Mariia Soroka, Christoph Peters, and Steve Marschner.
 
 It is based on the [experimental branch of redner](https://github.com/BachiLi/redner/tree/experimental), which includes implementations of the paper [Differentiable Monte Carlo Ray Tracing through Edge Sampling](https://people.csail.mit.edu/tzumao/diffrt/) by Tzu-Mao Li, Miika Aittala, Fredo Durand, and Jaakko Lehtinen, as well as an implementation of [Unbiased Warped-Area Sampling for Differentiable Rendering](https://people.csail.mit.edu/sbangaru/projects/was-2020/index.html) by Sai Praveen Bangaru, Tzu-Mao Li, and Fredo Durand.
