@@ -1,65 +1,31 @@
-# redner-experimental: Unbiased differentiable rendering
+## Quadric-Based Silhouette Sampling for Differentiable Rendering
 
-This is an experimental branch of redner that supports two different techniques for differentiable rendering. (See roadmap below for feature restrictions)
+This repository contains the source code for the [Quadric-Based Silhouette Sampling for Differentiable Rendering](https://mariasoroka.github.io/papers/EdgeSampling.html) by Mariia Soroka, Christoph Peters, and Steve Marschner.
 
-redner is a differentiable renderer that can take the derivatives of rendering outputs with respect to arbitrary scene parameters, that is, you can backpropagate from the image to your 3D scene. One of the major usages of redner is inverse rendering (hence the name redner) through gradient descent. What sets redner apart are: 1) it computes correct rendering gradients stochastically without any approximation by properly considering the discontinuities, and 2) it has a physically-based mode -- which means it can simulate photons and produce realistic lighting phenomena, such as shadow and global illumination, and it handles the derivatives of these features correctly. You can also use redner in a [fast deferred rendering mode](https://colab.research.google.com/github/BachiLi/redner/blob/master/tutorials/fast_local_shading.ipynb) for local shading: in this mode it still has correct gradient estimation and more elaborate material models compared to most differentiable renderers out there.
+It is based on the [experimental branch of redner](https://github.com/BachiLi/redner/tree/experimental), which includes implementations of the paper [Differentiable Monte Carlo Ray Tracing through Edge Sampling](https://people.csail.mit.edu/tzumao/diffrt/) by Tzu-Mao Li, Miika Aittala, Fredo Durand, and Jaakko Lehtinen, as well as an implementation of [Unbiased Warped-Area Sampling for Differentiable Rendering](https://people.csail.mit.edu/sbangaru/projects/was-2020/index.html) by Sai Praveen Bangaru, Tzu-Mao Li, and Fredo Durand.
 
-For more details on the rendering methods, what they can do, and the techniques they use for computing the derivatives, please
-take a look at following papers:
-
-## Edge-sampling
-![](https://people.csail.mit.edu/tzumao/diffrt/teaser.jpg)
-[Differentiable Monte Carlo Ray Tracing through Edge Sampling](https://people.csail.mit.edu/tzumao/diffrt/), Tzu-Mao Li, Miika Aittala, Fredo Durand, Jaakko Lehtinen.
-See Tzu-Mao Li's [thesis](https://people.csail.mit.edu/tzumao/phdthesis/phdthesis.pdf) for even more details.
-
-## Warped-area sampling (WAS)
-![](https://www.saipraveenb.com/projects/was-2020/teaser.png)
-[Unbiased Warped-area Sampling for Differentiable Rendering](https://www.saipraveenb.com/projects/was-2020/), Sai Praveen Bangaru, Tzu-Mao Li, Fredo Durand.
-The following files contain the implementation of the paper:
-
- - `pathtracer_was.h` WAS pathtracer code.
- - `warp_common.h` Weight, gradient of weight and Jacobian computation.
- - `warp_aux.h` Auxiliary ray sampling and PDF computation.
- - `warp_cv.h` Control variates computation (primary and aux).
- - `warp_rr.h` Russian roulette computation.
-
-Additional features:
- - `vmf.h` von-Mises Fisher lights for soft, differentiable directional lighting. (Heavily relies on this excellent document: https://www.mitsuba-renderer.org/~wenzel/files/vmf.pdf)
-
-### Performance & Stability considerations
- - Meshes must contain atleast 1 interior vertex for the boundary term to work. For example, for a flat square, use 4 faces with a vertex at the center rather than 2 faces.
- - `pyredner.integrators.WarpFieldIntegrator()` is currently CPU-only and can be much slower than the GPU-based `pyredner.integrators.EdgeSamplingIntegrator()`, especially for simple scenes. Refer to the paper to understand scenarios where `pyredner.integrators.WarpFieldIntegrator()` provides better results than `pyredner.integrators.EdgeSamplingIntegrator()`, and vice-versa.
-
-The following comparison between edge-sampling and warped-area sampling demonstrates the relative strengths of the two techniques.
-![image](https://user-images.githubusercontent.com/31557731/113451243-99a25c80-93cf-11eb-913b-828bc0c0258f.png)
 
 ## Installation
-This experimental branch must be compiled from source.
-Clone this repository and run:
+
+To compile, clone this repository with all submodules, check out the `quadric_sampling` branch and run:
 
 ```
 python setup.py install
 ```
 
-It is generally advisable to use a new environment to avoid overwriting an existing version of redner.
+## How to run
 
-## Documentation
+The scripts used to compute the gradient images in the paper are available in [this repository](https://github.com/mariasoroka/QuadricBasedSilhouetteSamplingExperiments).
 
-A good starting point to learn how to use redner is to look at the [wiki](https://github.com/BachiLi/redner/wiki). The API documetation is [here](https://redner.readthedocs.io/en/latest/).
-You can also take a look at the tests directories ([PyTorch](tests) and [TensorFlow](tests_tensorflow)) to have some ideas.
+## Other boundary sampling methods
 
-This branch differs slightly from the master, although the same API is supported for backwards compatibility.
-To use the new renderer use the `serialize_scene_class(scene, integrator)` method instead of `serialize_scene(scene, *args)` to specify your choice of integrator (and its parameters).
+To use the edge sampling method by Li et al. with the fixed v-sphere rejection test (see Appendix F of the "Quadric-Based Silhouette Sampling for Differentiable Rendering" paper), check out the `hough_transforms` branch.
 
-The new tests `tests/test_single_triangle_was.py` and `tests/test_shadow_blocker_was.py` demonstrate this new feature.
-
-## News
-
-04/01/2021 - Now supports both differentiable rendering methods. Swap between `integrator=pyredner.integrators.EdgeSamplingIntegrator()` and `integrator=pyredner.integrators.WarpFieldIntegrator()` to quickly try the different methods.
+In addition to fixing some bugs, `quadric_sampling` branch also extends the WAS implementation by Bangaru et al. to support the distance function introduced in "Warped-Area Reparameterization of Differential Path Integrals" by Xu et al.
 
 ## Dependencies
 
-redner depends on a few libraries/systems, which are all included in the repository:
+This repository inherits redner dependencies:
 - [Python 3.6 or above](https://www.python.org)
 - [pybind11](https://github.com/pybind/pybind11)
 - [PyTorch 1.0 or above](https://pytorch.org) (optional, required if TensorFlow is not installed)
@@ -72,45 +38,39 @@ redner depends on a few libraries/systems, which are all included in the reposit
 - [xatlas](https://github.com/jpcy/xatlas)
 - A few other python packages: numpy, scikit-image, and imageio
 
-## Roadmap
+And, additionally, requires:
+- [CointUtils](https://github.com/coin-or/CoinUtils.git)
+- [Clp](https://github.com/coin-or/Clp.git)
 
-The current WAS implementation is restricted to a smaller set of features compared to the master branch, but we intend to expand its capabilities to align with the master branch and eventually merge.
 
-Current roadmap before merging:
-- All reconstruction filters. WAS is currently restricted to using the Gaussian filter (the default for this branch).
-- GPU support. (This implementation is currently CPU-only since it uses some STL classes)
-- Tensorflow support. (This branch will crash with tensorflow since it does not contain the necessary hooks)
-- Windows support. (Not tested)
+CoinUtils and Clp will be compiled by the setup.py script. They can be also compiled manually:
+```
+# from ./CoinUtils directory
+./configure -C --prefix=./CoinUtils
+make
+make install
+```
+
+```
+# from ./Clp directory
+./configure -C --prefix=./Clp PKG_CONFIG_PATH=./CoinUtils/lib/pkgconfig
+make
+make install
+```
 
 ## Citation
-Please cite one or both of these papers, if you use this repository.
 
-### Edge-sampling
 ```
-@article{Li:2018:DMC,
-    title = {Differentiable Monte Carlo Ray Tracing through Edge Sampling},
-    author = {Li, Tzu-Mao and Aittala, Miika and Durand, Fr{\'e}do and Lehtinen, Jaakko},
-    journal = {ACM Trans. Graph. (Proc. SIGGRAPH Asia)},
-    volume = {37},
-    number = {6},
-    pages = {222:1--222:11},
-    year = {2018}
+@article{Soroka2025QuadricBasedSampling,
+title = {Quadric-Based Silhouette Sampling for Differentiable Rendering},
+author = {Soroka, Mariia and Peters, Christoph and Marschner, Steve},
+year = {2025},
+issue_date = {August 2025},
+publisher = {Association for Computing Machinery},
+volume = {44},
+number = {4},
+doi = {10.1145/3731146},
+journal = {ACM Trans. Graph.},
+month = jul
 }
 ```
-
-### Warped-area sampling
-```
-@article{bangaru2020warpedsampling,
-  title = {Unbiased Warped-Area Sampling for Differentiable Rendering},
-  author = {Bangaru, Sai and Li, Tzu-Mao and Durand, Fr{\'e}do},
-  journal = {ACM Trans. Graph.},
-  volume = {39},
-  number = {6}, 
-  pages = {245:1--245:18},
-  year = {2020},
-  publisher = {ACM},
-}
-```
-
-
-If you have any questions/comments/bug reports, feel free to open a github issue or e-mail to the authors Tzu-Mao Li (tzumao@mit.edu) and Sai Bangaru (sbangaru@mit.edu)
