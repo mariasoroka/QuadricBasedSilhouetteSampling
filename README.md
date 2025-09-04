@@ -25,6 +25,15 @@ To use the edge sampling method by Li et al. with the fixed v-sphere rejection t
 
 In addition to fixing some bugs, `quadric_sampling` branch also extends the WAS implementation by Bangaru et al. to support the distance function introduced in "Warped-Area Reparameterization of Differential Path Integrals" by Xu et al.
 
+## Important code files
+
+- edge_tree.cpp – constructs the edge hierarchy
+- edge.cpp – contains the edge sampling code
+- edge_tree.h – implements importance functions
+- rejection_test.h – contains the rejection test implementation
+- quadric.h – defines structs for quadrics and includes dual quadric fitting code
+- offset_quadric.h – computes a good offset quadric
+
 ## Dependencies
 
 This repository inherits redner dependencies:
